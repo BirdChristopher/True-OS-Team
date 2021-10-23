@@ -207,6 +207,7 @@ tid_t thread_create(const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock(t);
+  thread_yield();
 
   return tid;
 }
@@ -267,7 +268,8 @@ void thread_unblock(struct thread *t)
 
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
-  list_push_back(&ready_list, &t->elem);
+  list_push_ordered(&ready_list, &t->elem, t->priority);
+  //list_push_back(&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level(old_level);
 }
@@ -335,7 +337,8 @@ void thread_yield(void)
 
   old_level = intr_disable();
   if (cur != idle_thread)
-    list_push_back(&ready_list, &cur->elem);
+    list_push_ordered(&ready_list, &cur->elem, cur->priority);
+  //list_push_back(&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule();
   intr_set_level(old_level);
@@ -361,6 +364,7 @@ void thread_foreach(thread_action_func *func, void *aux)
 void thread_set_priority(int new_priority)
 {
   thread_current()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -485,7 +489,8 @@ init_thread(struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  list_push_back(&all_list, &t->allelem);
+  list_push_ordered(&all_list, &t->allelem, priority);
+  //list_push_back(&all_list, &t->allelem);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
