@@ -327,7 +327,7 @@ void cond_wait(struct condition *cond, struct lock *lock)
    interrupt handler. */
 bool cond_cmp(const struct list_elem *a, const struct list_elem *b, void *null)
 {
-  return list_entry((list_front(&list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem) > list_entry((list_front(&list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem);
+  return list_entry((list_front(&list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem)->priority > list_entry((list_front(&list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem)->priority;
 }
 
 void cond_signal(struct condition *cond, struct lock *lock UNUSED)
