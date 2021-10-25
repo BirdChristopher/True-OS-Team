@@ -99,15 +99,15 @@ bool sema_try_down(struct semaphore *sema)
   return success;
 }
 
-/* Up or "V" operation on a semaphore.  Increments SEMA's value
-   and wakes up one thread of those waiting for SEMA, if any.
-
-   This function may be called from an interrupt handler. */
-bool sema_cmp(const struct list_elem *a, const struct list_elem *b, void *null)
+bool sema_cmp(const struct list_elem *a, const struct list_elem *b, void *null) //the comparsion function
 {
   return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
 }
 
+/* Up or "V" operation on a semaphore.  Increments SEMA's value
+   and wakes up one thread of those waiting for SEMA, if any.
+
+   This function may be called from an interrupt handler. */
 void sema_up(struct semaphore *sema)
 {
   enum intr_level old_level;
@@ -134,7 +134,7 @@ void sema_up(struct semaphore *sema)
     // }
     // else
     // {
-    list_sort(&sema->waiters, sema_cmp, NULL);
+    list_sort(&sema->waiters, sema_cmp, NULL); //make the waiting list into ordered
     thread_unblock(list_entry(list_pop_front(&sema->waiters),
                               struct thread, elem));
     // }
@@ -311,11 +311,16 @@ void cond_wait(struct condition *cond, struct lock *lock)
   ASSERT(lock_held_by_current_thread(lock));
 
   sema_init(&waiter.semaphore, 0);
-  //list_push_ordered(&cond->waiters, &waiter.elem, 0);
-  list_push_back(&cond->waiters, &waiter.elem);
+  list_push_ordered(&cond->waiters, &waiter.elem, 0);
+  //list_push_back(&cond->waiters, &waiter.elem);
   lock_release(lock);
   sema_down(&waiter.semaphore);
   lock_acquire(lock);
+}
+
+bool cond_cmp(const struct list_elem *a, const struct list_elem *b, void *null)
+{
+  return list_entry((list_front(&list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem)->priority > list_entry((list_front(&list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem)->priority;
 }
 
 /* If any threads are waiting on COND (protected by LOCK), then
@@ -325,10 +330,6 @@ void cond_wait(struct condition *cond, struct lock *lock)
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to signal a condition variable within an
    interrupt handler. */
-bool cond_cmp(const struct list_elem *a, const struct list_elem *b, void *null)
-{
-  return list_entry((list_front(&list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem)->priority > list_entry((list_front(&list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)), struct thread, elem)->priority;
-}
 
 void cond_signal(struct condition *cond, struct lock *lock UNUSED)
 {
@@ -339,7 +340,7 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED)
 
   if (!list_empty(&cond->waiters))
   {
-    list_sort(&cond->waiters, cond_cmp, NULL);
+    list_sort(&cond->waiters, cond_cmp, NULL); //make the list into ordered before wake
     sema_up(&list_entry(list_pop_front(&cond->waiters),
                         struct semaphore_elem, elem)
                  ->semaphore);

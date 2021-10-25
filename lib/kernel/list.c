@@ -215,6 +215,8 @@ void list_push_back(struct list *list, struct list_elem *elem)
   list_insert(list_end(list), elem);
 }
 
+/*Insert ELEM into the list in ordered
+*/
 void list_push_ordered(struct list *list, struct list_elem *ele, int priority)
 {
   struct list_elem *e = list_begin(list);
