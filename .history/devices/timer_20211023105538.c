@@ -165,27 +165,11 @@ void timer_print_stats(void)
   printf("Timer: %" PRId64 " ticks\n", timer_ticks());
 }
 
-
-//TODO:更改timeInterrupt 实现优先级等定时重计算
 /* Timer interrupt handler. */
 static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
   ticks++;
-  //thread_tick 计算线程在用户、内核等运行时间
-  if(thread_mlfqs){
-    // update_recent_cpu() 考虑到idle_thread 只能在thread.c中引用，不在timeInterrupt内直接做加法
-    // update_priority()
-    //每秒一次，每个线程的recent_cpu 以这种方式更新
-    if(ticks % TIMER_FREQ){
-      update_load_avg();
-      update_recent_cpu();
-    }
-    if(ticks % 4 == 0){
-      update_priority();
-    }
-
-  }
   thread_tick();
 }
 

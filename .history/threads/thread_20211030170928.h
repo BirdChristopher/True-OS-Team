@@ -5,9 +5,6 @@
 #include <list.h>
 #include <stdint.h>
 
-//TODO:增加fp库
-#include <fixed-point.h>
-
 /* States in a thread's life cycle. */
 enum thread_status
 {
@@ -26,10 +23,6 @@ typedef int tid_t;
 #define PRI_MIN 0      /* Lowest priority. */
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63     /* Highest priority. */
-
-//TODO:nice范围
-#define NICE_MIN -20
-#define NICE_MAX 20
 
 /* A kernel thread or user process.
 
@@ -90,10 +83,6 @@ typedef int tid_t;
 struct thread
 {
    /* Owned by thread.c. */
-   // TODO添加nice cputime(考虑到用load_avg计算 应该是fp浮点数)
-   int nice;                   //nice level:integer max 20 min -20
-   fp recent_cpu;               // recent cpu time
-
    tid_t tid;                 /* Thread identifier. */
    enum thread_status status; /* Thread state. */
    char name[16];             /* Name (for debugging purposes). */
@@ -152,11 +141,5 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
-
-//新增的函数定义
-void update_recent_cpu_signle(void);
-void update_recent_cpu(void);
-void update_load_avg(void);
-void update_priority(void);
 
 #endif /* threads/thread.h */

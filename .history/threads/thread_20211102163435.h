@@ -153,10 +153,4 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
-//新增的函数定义
-void update_recent_cpu_signle(void);
-void update_recent_cpu(void);
-void update_load_avg(void);
-void update_priority(void);
-
 #endif /* threads/thread.h */

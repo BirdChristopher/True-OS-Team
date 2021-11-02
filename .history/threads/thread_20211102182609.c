@@ -78,7 +78,7 @@ void thread_schedule_tail(struct thread *prev);
 static tid_t allocate_tid(void);
 
 
-//创建主线程 暂时不确定load_avg需要在thread_init or start开始 在开始调度比较合理（准备运行的平均线程数
+//创建主线程 暂时不确定load_avg需要在thread_init or start开始
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -119,9 +119,6 @@ void thread_start(void)
 
   /* Start preemptive thread scheduling. */
   intr_enable();
-
-  //TODO：初始化系统平均负载
-  load_avg = INT_TO_FP(0);
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down(&idle_started);
@@ -403,14 +400,13 @@ int thread_get_nice(void)
   return thread_current()->nice;
 }
 
-//todo:填空函数
+//todo
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-  fp tmpfp = MULTI_FP_INT(load_avg,100);
-  return FP_TO_INT_NEAREST(tmpfp);
-
+  /* Not yet implemented. */
+  return 0;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. *///DONE
@@ -656,45 +652,6 @@ allocate_tid(void)
   lock_release(&tid_lock);
 
   return tid;
-}
-
-void update_recent_cpu_signle()
-{
-  struct thread *cur = thread_current();
-  if( cur != idle_thread) cur->recent_cpu = ADD_FP_INT(cur->recent_cpu,1);
-}
-
-
-void update_load_avg(){
-  fp tmp_load_avg = DIVIDE_FP_INT(MULTI_FP_INT(load_avg,59),60);
-  size_t cur_ready;
-  if(thread_current() != idle_thread) cur_ready = list_size(&ready_list) + 1;
-  else cur_ready = list_size(&ready_list);
-  fp tmp_ready = DIVIDE_FP_INT(INT_TO_FP(cur_ready),60);
-  //这里tmp——load——avg类型可能不太确定
-  load_avg = ADD_FP_FP(tmp_load_avg,tmp_ready);
-}
-
-void update_recent_cpu()
-{
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp parameter = DIVIDE_FP(MULTI_FP_INT(load_avg,2),ADD_FP_INT(MULTI_FP_INT(load_avg,2),1));
-    cur->recent_cpu = ADD_FP_INT(MULTI_FP(parameter,cur->recent_cpu),cur->nice);
-  }
-}
-
-void update_priority(){
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-    fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
-    cur->priority = FP_TO_INT_ZERO(tmp_priority);
-  }
 }
 
 /* Offset of `stack' member within `struct thread'.

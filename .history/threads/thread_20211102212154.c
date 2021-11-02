@@ -687,14 +687,7 @@ void update_recent_cpu()
 }
 
 void update_priority(){
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-    fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
-    cur->priority = FP_TO_INT_ZERO(tmp_priority);
-  }
+
 }
 
 /* Offset of `stack' member within `struct thread'.

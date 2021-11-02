@@ -658,43 +658,16 @@ allocate_tid(void)
   return tid;
 }
 
-void update_recent_cpu_signle()
-{
-  struct thread *cur = thread_current();
-  if( cur != idle_thread) cur->recent_cpu = ADD_FP_INT(cur->recent_cpu,1);
-}
+void update_recent_cpu(){
 
+}
 
 void update_load_avg(){
-  fp tmp_load_avg = DIVIDE_FP_INT(MULTI_FP_INT(load_avg,59),60);
-  size_t cur_ready;
-  if(thread_current() != idle_thread) cur_ready = list_size(&ready_list) + 1;
-  else cur_ready = list_size(&ready_list);
-  fp tmp_ready = DIVIDE_FP_INT(INT_TO_FP(cur_ready),60);
-  //这里tmp——load——avg类型可能不太确定
-  load_avg = ADD_FP_FP(tmp_load_avg,tmp_ready);
-}
 
-void update_recent_cpu()
-{
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp parameter = DIVIDE_FP(MULTI_FP_INT(load_avg,2),ADD_FP_INT(MULTI_FP_INT(load_avg,2),1));
-    cur->recent_cpu = ADD_FP_INT(MULTI_FP(parameter,cur->recent_cpu),cur->nice);
-  }
 }
 
 void update_priority(){
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-    fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
-    cur->priority = FP_TO_INT_ZERO(tmp_priority);
-  }
+  
 }
 
 /* Offset of `stack' member within `struct thread'.
