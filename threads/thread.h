@@ -24,6 +24,11 @@ typedef int tid_t;
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63     /* Highest priority. */
 
+/* 记录所有优先级捐赠的列表 */
+struct list donation_list;
+/* 记录将要被free的记录 */
+struct list donation2delete;
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -88,6 +93,7 @@ struct thread
    char name[16];             /* Name (for debugging purposes). */
    uint8_t *stack;            /* Saved stack pointer. */
    int priority;              /* Priority. */
+   int real_priority;         /* 新加入的内容，用于存储该线程释放锁后应回到的优先级 */
    int64_t sleep_end;         /* thread sleep end time*/
    int64_t sleep_begin;       /* thread sleep begin time */
    struct list_elem allelem;  /* List element for all threads list. */
@@ -104,6 +110,19 @@ struct thread
 
    /* Owned by thread.c. */
    unsigned magic; /* Detects stack overflow. */
+};
+
+/* 每次发生的捐赠都会在这里被记录 */
+struct donation_log
+{
+   struct lock *mutex;
+   struct thread *donator;
+   struct thread *receiver;
+   int donator_pri;
+   int receiver_pri;
+   bool is_nest_donation;
+
+   struct list_elem don_elem;
 };
 
 /* If false (default), use round-robin scheduler.
@@ -135,11 +154,17 @@ typedef void thread_action_func(struct thread *t, void *aux);
 void thread_foreach(thread_action_func *, void *);
 
 int thread_get_priority(void);
+int thread_get_real_priority(void); //新加入的trivial stuff
 void thread_set_priority(int);
 
 int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+/* 新函数声明 */
+bool check_if_need_donation(int high_pri, int low_pri);
+
+void thread_promote(struct thread *);
 
 #endif /* threads/thread.h */
