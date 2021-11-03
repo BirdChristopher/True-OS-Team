@@ -418,15 +418,9 @@ int thread_get_real_priority(void)
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice )
 {
-  
-  thread_current()->nice= nice > NICE_MAX ? NICE_MAX : nice;
-  thread_current()->nice = nice < NICE_MIN ? NICE_MIN : nice;
   thread_current()->nice = nice;
   //重新计算优先级 待补充
-  // update_priority_single(thread_current());
-  update_priority_current();
   thread_yield();
-
 }
 
 
@@ -438,6 +432,7 @@ int thread_get_nice(void)
   // return 0;
   return thread_current()->nice;
 }
+
 //todo:填空函数
 
 /* Returns 100 times the system load average. */
@@ -706,7 +701,7 @@ void update_load_avg(){
   size_t cur_ready;
   if(thread_current() != idle_thread) cur_ready = list_size(&ready_list) + 1;
   else cur_ready = list_size(&ready_list);
-  fp tmp_ready = DIVIDE_FP_INT(INT_TO_FP((int)cur_ready),60);
+  fp tmp_ready = DIVIDE_FP_INT(INT_TO_FP(cur_ready),60);
   //这里tmp——load——avg类型可能不太确定
   load_avg = ADD_FP_FP(tmp_load_avg,tmp_ready);
 }
@@ -715,70 +710,22 @@ void update_recent_cpu()
 {
   struct list_elem * e;
   struct thread *cur;
-  fp parameter;
   for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
     cur = list_entry(e,struct thread,allelem);
-    if (cur != idle_thread){
-      parameter = DIVIDE_FP(MULTI_FP_INT(load_avg,2),ADD_FP_INT(MULTI_FP_INT(load_avg,2),1));
-      cur->recent_cpu = ADD_FP_INT(MULTI_FP(parameter,cur->recent_cpu),cur->nice);
-      update_priority_single(e);
-    }
-    else return;
+    fp parameter = DIVIDE_FP(MULTI_FP_INT(load_avg,2),ADD_FP_INT(MULTI_FP_INT(load_avg,2),1));
+    cur->recent_cpu = ADD_FP_INT(MULTI_FP(parameter,cur->recent_cpu),cur->nice);
   }
-  // update_priority();
 }
 
-void update_priority_single(struct list_elem * e){
-  // struct list_elem * e;
-  struct thread *cur = list_entry(e,struct thread,allelem);
-    if(cur != idle_thread){
-      fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-      fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),(2*cur->nice));
-      int tmp_pri = FP_TO_INT_ZERO(tmp_priority);
-      tmp_pri = tmp_pri > PRI_MAX? PRI_MAX:tmp_pri;
-      tmp_pri = tmp_pri < PRI_MIN? PRI_MIN:tmp_pri;
-      cur->priority = tmp_pri;
-      // if(thread_current() == cur) thread_yield();
-      // list_remove(e);
-      // list_push_ordered(&all_list, &cur->elem, cur->priority);
-    }
-    else return;
-  // }
-}
-
-void update_priority_current(){
-  // struct list_elem * e;
-  enum intr_level old_level = intr_disable();
-   
-  struct thread *cur = thread_current();
-  // int tmp_pri;
-  // fp tmp_cpu,tmp_priority;
-  // for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-  //   cur = list_entry(e,struct thread,allelem);
-  //   if(cur != idle_thread){
-  //     tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-  //     tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
-  //     tmp_pri = FP_TO_INT_ZERO(tmp_priority);
-  //     tmp_pri = tmp_pri > PRI_MAX? PRI_MAX:tmp_pri;
-  //     tmp_pri = tmp_pri < PRI_MIN? PRI_MIN:tmp_pri;
-  //     cur->priority = tmp_pri;
-  //     // if(thread_current() == cur) thread_yield();
-  //     // // list
-  //   }
-  //   else return;
-  // }
-  if(cur != idle_thread){
-      fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-      fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),(2*cur->nice));
-      int tmp_pri = FP_TO_INT_ZERO(tmp_priority);
-      tmp_pri = tmp_pri > PRI_MAX? PRI_MAX:tmp_pri;
-      tmp_pri = tmp_pri < PRI_MIN? PRI_MIN:tmp_pri;
-      // thread_set_priority(tmp_pri);
-      cur->priority = tmp_pri;
-      thread_yield();
-    }
-    else return;
-     intr_set_level(old_level);
+void update_priority(){
+  struct list_elem * e;
+  struct thread *cur;
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    cur = list_entry(e,struct thread,allelem);
+    fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
+    fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
+    cur->priority = FP_TO_INT_ZERO(tmp_priority);
+  }
 }
 
 /* Offset of `stack' member within `struct thread'.
