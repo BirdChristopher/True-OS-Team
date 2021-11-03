@@ -62,9 +62,6 @@ static unsigned thread_ticks; /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
-//TODO:添加了全局变量load_avg(考虑到涉及浮点数运算，应为fp)
-fp load_avg;
-
 static void kernel_thread(thread_func *, void *aux);
 
 static void idle(void *aux UNUSED);
@@ -77,8 +74,6 @@ static void schedule(void);
 void thread_schedule_tail(struct thread *prev);
 static tid_t allocate_tid(void);
 
-
-//创建主线程 暂时不确定load_avg需要在thread_init or start开始 在开始调度比较合理（准备运行的平均线程数
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -100,8 +95,6 @@ void thread_init(void)
   list_init(&ready_list);
   list_init(&all_list);
   list_init(&sleep_list);
-  list_init(&donation_list);
-  list_init(&donation2delete);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread();
@@ -121,9 +114,6 @@ void thread_start(void)
 
   /* Start preemptive thread scheduling. */
   intr_enable();
-
-  //TODO：初始化系统平均负载
-  load_avg = INT_TO_FP(0);
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down(&idle_started);
@@ -279,7 +269,7 @@ void thread_unblock(struct thread *t)
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
   list_push_ordered(&ready_list, &t->elem, t->priority);
-  //按优先级插入队列
+  //list_push_back(&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level(old_level);
 }
@@ -370,31 +360,11 @@ void thread_foreach(thread_action_func *func, void *aux)
   }
 }
 
-/* 
-  Sets the current thread's priority to NEW_PRIORITY. 
-  TODO：这个函数不能总是生效！！！当new_priority小于当前priority，且线程处于被捐赠状态，需要屏蔽此次优先级修改
-*/
+/* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
 {
-  struct thread *cur = thread_current();
-  if (new_priority >= cur->priority)
-  {
-    cur->priority = new_priority;
-    cur->real_priority = new_priority;
-  }
-  else
-  {
-    if (cur->priority > cur->real_priority)
-    { //说明处于被捐赠状态
-      cur->real_priority = new_priority;
-    }
-    else
-    { //未处于捐赠状态且优先级下调，需要出让cpu
-      cur->priority = new_priority;
-      cur->real_priority = new_priority;
-      thread_yield();
-    }
-  }
+  thread_current()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -403,55 +373,32 @@ int thread_get_priority(void)
   return thread_current()->priority;
 }
 
-/* 返回线程的真实优先级 */
-int thread_get_real_priority(void)
-{
-  return thread_current()->real_priority;
-}
-
-
-//TODO:BSD调度器待实现内容
-//将当前线程的nice值设置为new_nice并根据新值重新计算线程的优先级（参见B.2 计算优先级）。如果正在运行的线程不再具有最高优先级，则yield。
-//原形参（nice UNUSED）删除unused
 /* Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice )
+void thread_set_nice(int nice UNUSED)
 {
-  thread_current()->nice = nice;
-  //重新计算优先级 待补充
-  thread_yield();
+  /* Not yet implemented. */
 }
 
-
-//更改：返回值
 /* Returns the current thread's nice value. */
 int thread_get_nice(void)
 {
   /* Not yet implemented. */
-  // return 0;
-  return thread_current()->nice;
+  return 0;
 }
-
-//todo:填空函数
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-  fp tmpfp = MULTI_FP_INT(load_avg,100);
-  return FP_TO_INT_NEAREST(tmpfp);
-
+  /* Not yet implemented. */
+  return 0;
 }
 
-/* Returns 100 times the current thread's recent_cpu value. *///DONE
+/* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
   /* Not yet implemented. */
-  // return 0;
-  fp cur_cpu_fp = thread_current()->recent_cpu;
-  fp cpu_multi = MULTI_FP_INT(cur_cpu_fp,100);
-  return FP_TO_INT_NEAREST(cpu_multi); 
+  return 0;
 }
-
-
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -500,7 +447,7 @@ kernel_thread(thread_func *function, void *aux)
 {
   ASSERT(function != NULL);
 
-  intr_enable(); /* The scheduler runs with interrupts off. */
+  intr_enable(); /* The scheduler runs with interrupts off. TODO:???*/
   function(aux); /* Execute the thread function. */
   thread_exit(); /* If function() returns, kill the thread. */
 }
@@ -527,8 +474,6 @@ is_thread(struct thread *t)
   return t != NULL && t->magic == THREAD_MAGIC;
 }
 
-
-// todo:初始化nice和recent_cpu
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
@@ -543,10 +488,6 @@ init_thread(struct thread *t, const char *name, int priority)
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
-  t->real_priority = priority;
-  //TODO:INITIALIZED 初始化
-  t->nice = 0;
-  t->recent_cpu = INT_TO_FP(0);
   t->magic = THREAD_MAGIC;
   list_push_ordered(&all_list, &t->allelem, priority);
   //list_push_back(&all_list, &t->allelem);
@@ -570,7 +511,7 @@ alloc_frame(struct thread *t, size_t size)
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
-struct thread *
+static struct thread *
 next_thread_to_run(void)
 {
   if (list_empty(&ready_list))
@@ -687,84 +628,6 @@ allocate_tid(void)
   return tid;
 }
 
-void update_recent_cpu_signle()
-{
-  struct thread *cur = thread_current();
-  if( cur != idle_thread) cur->recent_cpu = ADD_FP_INT(cur->recent_cpu,1);
-}
-
-
-void update_load_avg(){
-  fp tmp_load_avg = DIVIDE_FP_INT(MULTI_FP_INT(load_avg,59),60);
-  size_t cur_ready;
-  if(thread_current() != idle_thread) cur_ready = list_size(&ready_list) + 1;
-  else cur_ready = list_size(&ready_list);
-  fp tmp_ready = DIVIDE_FP_INT(INT_TO_FP(cur_ready),60);
-  //这里tmp——load——avg类型可能不太确定
-  load_avg = ADD_FP_FP(tmp_load_avg,tmp_ready);
-}
-
-void update_recent_cpu()
-{
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp parameter = DIVIDE_FP(MULTI_FP_INT(load_avg,2),ADD_FP_INT(MULTI_FP_INT(load_avg,2),1));
-    cur->recent_cpu = ADD_FP_INT(MULTI_FP(parameter,cur->recent_cpu),cur->nice);
-  }
-}
-
-void update_priority(){
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-    fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
-    cur->priority = FP_TO_INT_ZERO(tmp_priority);
-  }
-}
-
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
-
-/* 检查是否需要捐赠优先级 */
-bool check_if_need_donation(int high_pri, int low_pri)
-{
-  if (high_pri <= low_pri)
-    return false;
-  struct list_elem *e;
-  for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e))
-  {
-    struct thread *thread = list_entry(e, struct thread, elem);
-    if (thread->priority < high_pri && thread->priority > low_pri)
-    {
-      return true;
-    }
-  }
-  return false;
-}
-
-/* 根据优先级将线程的执行次序提前 */
-void thread_promote(struct thread *mThread)
-{
-  struct list_elem *e;
-
-  while (&mThread->elem != list_front(&ready_list))
-  {
-    e = list_prev(&mThread->elem);
-    struct thread *thr = list_entry(e, struct thread, elem);
-    if (mThread->priority >= thr->priority)
-    {
-      //交换过程
-      thr->elem.next = mThread->elem.next;
-      mThread->elem.prev = thr->elem.prev;
-      thr->elem.prev = &mThread->elem;
-      mThread->elem.next = &thr->elem;
-    }
-    else
-      break;
-  }
-}

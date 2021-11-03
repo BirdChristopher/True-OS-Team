@@ -100,8 +100,6 @@ void thread_init(void)
   list_init(&ready_list);
   list_init(&all_list);
   list_init(&sleep_list);
-  list_init(&donation_list);
-  list_init(&donation2delete);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread();
@@ -279,7 +277,7 @@ void thread_unblock(struct thread *t)
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
   list_push_ordered(&ready_list, &t->elem, t->priority);
-  //按优先级插入队列
+  //list_push_back(&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level(old_level);
 }
@@ -370,43 +368,17 @@ void thread_foreach(thread_action_func *func, void *aux)
   }
 }
 
-/* 
-  Sets the current thread's priority to NEW_PRIORITY. 
-  TODO：这个函数不能总是生效！！！当new_priority小于当前priority，且线程处于被捐赠状态，需要屏蔽此次优先级修改
-*/
+/* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
 {
-  struct thread *cur = thread_current();
-  if (new_priority >= cur->priority)
-  {
-    cur->priority = new_priority;
-    cur->real_priority = new_priority;
-  }
-  else
-  {
-    if (cur->priority > cur->real_priority)
-    { //说明处于被捐赠状态
-      cur->real_priority = new_priority;
-    }
-    else
-    { //未处于捐赠状态且优先级下调，需要出让cpu
-      cur->priority = new_priority;
-      cur->real_priority = new_priority;
-      thread_yield();
-    }
-  }
+  thread_current()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
 int thread_get_priority(void)
 {
   return thread_current()->priority;
-}
-
-/* 返回线程的真实优先级 */
-int thread_get_real_priority(void)
-{
-  return thread_current()->real_priority;
 }
 
 
@@ -500,7 +472,7 @@ kernel_thread(thread_func *function, void *aux)
 {
   ASSERT(function != NULL);
 
-  intr_enable(); /* The scheduler runs with interrupts off. */
+  intr_enable(); /* The scheduler runs with interrupts off. TODO:???*/
   function(aux); /* Execute the thread function. */
   thread_exit(); /* If function() returns, kill the thread. */
 }
@@ -543,7 +515,6 @@ init_thread(struct thread *t, const char *name, int priority)
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
-  t->real_priority = priority;
   //TODO:INITIALIZED 初始化
   t->nice = 0;
   t->recent_cpu = INT_TO_FP(0);
@@ -570,7 +541,7 @@ alloc_frame(struct thread *t, size_t size)
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
-struct thread *
+static struct thread *
 next_thread_to_run(void)
 {
   if (list_empty(&ready_list))
@@ -716,55 +687,9 @@ void update_recent_cpu()
 }
 
 void update_priority(){
-  struct list_elem * e;
-  struct thread *cur;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    cur = list_entry(e,struct thread,allelem);
-    fp tmp_cpu = DIVIDE_FP_INT(cur->recent_cpu,4);
-    fp tmp_priority = SUB_FP_INT(SUB_INT_FP(PRI_MAX,tmp_cpu),2*cur->nice);
-    cur->priority = FP_TO_INT_ZERO(tmp_priority);
-  }
+
 }
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
-
-/* 检查是否需要捐赠优先级 */
-bool check_if_need_donation(int high_pri, int low_pri)
-{
-  if (high_pri <= low_pri)
-    return false;
-  struct list_elem *e;
-  for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e))
-  {
-    struct thread *thread = list_entry(e, struct thread, elem);
-    if (thread->priority < high_pri && thread->priority > low_pri)
-    {
-      return true;
-    }
-  }
-  return false;
-}
-
-/* 根据优先级将线程的执行次序提前 */
-void thread_promote(struct thread *mThread)
-{
-  struct list_elem *e;
-
-  while (&mThread->elem != list_front(&ready_list))
-  {
-    e = list_prev(&mThread->elem);
-    struct thread *thr = list_entry(e, struct thread, elem);
-    if (mThread->priority >= thr->priority)
-    {
-      //交换过程
-      thr->elem.next = mThread->elem.next;
-      mThread->elem.prev = thr->elem.prev;
-      thr->elem.prev = &mThread->elem;
-      mThread->elem.next = &thr->elem;
-    }
-    else
-      break;
-  }
-}
