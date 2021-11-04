@@ -229,7 +229,9 @@ tid_t thread_create(const char *name, int priority,
 
    This function must be called with interrupts turned off.  It
    is usually a better idea to use one of the synchronization
-   primitives in synch.h. */
+   primitives in synch.h. 
+   参数:
+    bool timer_sleep: 用于决定该线程被block是否是因为定时器的作用。*/
 void thread_block(bool timer_sleep)
 {
   ASSERT(!intr_context());
@@ -237,7 +239,7 @@ void thread_block(bool timer_sleep)
 
   struct list_elem *e;
 
-  if (timer_sleep)
+  if (timer_sleep)//若该线程被定时器休眠
   {
     if (list_empty(&sleep_list))
       list_push_front(&sleep_list, &thread_current()->sleepelem);
@@ -374,7 +376,7 @@ void thread_foreach(thread_action_func *func, void *aux)
 
 /* 
   Sets the current thread's priority to NEW_PRIORITY. 
-  TODO：这个函数不能总是生效！！！当new_priority小于当前priority，且线程处于被捐赠状态，需要屏蔽此次优先级修改
+  这个函数不能总是生效！！！当new_priority小于当前priority，且线程处于被捐赠状态，需要屏蔽此次优先级修改
 */
 void thread_set_priority(int new_priority)
 {
@@ -631,6 +633,8 @@ void thread_schedule_tail(struct thread *prev)
   }
 }
 
+
+/* 唤醒正在被定时器休眠的线程 */
 static void
 wakeup_thread(void)
 {
@@ -650,9 +654,7 @@ wakeup_thread(void)
       thread_unblock(thread);
     }
     else
-    {
       break;
-    }
   }
 }
 
@@ -789,23 +791,6 @@ void update_priority_current(){
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
-
-/* 检查是否需要捐赠优先级 */
-bool check_if_need_donation(int high_pri, int low_pri)
-{
-  if (high_pri <= low_pri)
-    return false;
-  struct list_elem *e;
-  for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e))
-  {
-    struct thread *thread = list_entry(e, struct thread, elem);
-    if (thread->priority < high_pri && thread->priority > low_pri)
-    {
-      return true;
-    }
-  }
-  return false;
-}
 
 /* 根据优先级将线程的执行次序提前 */
 void thread_promote(struct thread *mThread)

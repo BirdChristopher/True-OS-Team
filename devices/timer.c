@@ -83,7 +83,7 @@ timer_elapsed(int64_t then)
 }
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+   be turned on.将定时休眠的线程加入sleep_list */
 void timer_sleep(int64_t ticks)
 {
   if (ticks <= 0)

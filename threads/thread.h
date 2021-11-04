@@ -29,7 +29,7 @@ typedef int tid_t;
 
 /* 记录所有优先级捐赠的列表 */
 struct list donation_list;
-/* 记录将要被free的记录 */
+/* 记录将要被free的记录。由于优先级归还过程中不能用free，所以先用该列表存储所有donation_log，每次lock_release后统一释放 */
 struct list donation2delete;
 //TODO:nice范围
 #define NICE_MIN -20
@@ -173,9 +173,10 @@ int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
 /* 新函数声明 */
-bool check_if_need_donation(int high_pri, int low_pri);
-
 void thread_promote(struct thread *);
+
+void wakeup_thread(void);
+
 //新增的函数定义
 void update_recent_cpu_signle(void);
 void update_recent_cpu(void);

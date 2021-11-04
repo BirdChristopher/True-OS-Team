@@ -204,7 +204,7 @@ void lock_acquire(struct lock *lock)
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
   enum intr_level old_level = intr_disable();
-  if (lock->holder != NULL)
+  if (lock->holder != NULL&&!thread_mlfqs)
     donate_priority(lock);
   sema_down(&lock->semaphore);
   intr_set_level(old_level);
@@ -313,8 +313,8 @@ void lock_release(struct lock *lock)
   ASSERT(lock_held_by_current_thread(lock));
 
   enum intr_level old_level = intr_disable();
-
-  refund_priority(lock);
+  if(!thread_mlfqs)
+    refund_priority(lock);
   lock->holder = NULL;
   sema_up(&lock->semaphore);
   free_donations();
@@ -384,6 +384,7 @@ void refund_priority(struct lock *lock)
   intr_set_level(old_level);
 }
 
+/* 用于将已经废弃的捐赠记录释放内存 */
 void free_donations()
 {
   struct list_elem *e, *f;
