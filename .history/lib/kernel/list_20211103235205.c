@@ -527,9 +527,3 @@ list_min(struct list *list, list_less_func *less, void *aux)
   }
   return min;
 }
-
-//TODO:添加cmp代码for LIST_SORT
-bool priority_cmp (const struct list_elem *a, const struct list_elem *b)
-{
-  return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
-}

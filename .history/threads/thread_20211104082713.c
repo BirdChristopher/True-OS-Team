@@ -700,10 +700,6 @@ void update_recent_cpu_signle()
   if( cur != idle_thread) cur->recent_cpu = ADD_FP_INT(cur->recent_cpu,1);
 }
 
-//调试用函数
-int get_size(){
-  return list_size(&ready_list);
-}
 
 void update_load_avg(){
   fp tmp_load_avg = DIVIDE_FP_INT(MULTI_FP_INT(load_avg,59),60);
