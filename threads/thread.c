@@ -635,7 +635,7 @@ void thread_schedule_tail(struct thread *prev)
 
 
 /* 唤醒正在被定时器休眠的线程 */
-static void
+void
 wakeup_thread(void)
 {
   if (list_empty(&sleep_list))
