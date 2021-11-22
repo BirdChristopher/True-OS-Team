@@ -59,7 +59,7 @@ intr_exit:
         /* Discard `struct intr_frame' vec_no, error_code,
            frame_pointer members. */
 	addl $12, %esp
-
+        
         /* Return to caller. */
 	iret
 .endfunc
