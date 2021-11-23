@@ -104,6 +104,7 @@ int process_wait(tid_t child_tid UNUSED)
 /* Free the current process's resources. */
 void process_exit(void)
 {
+  //TODO: 释放所有资源！！！！
   struct thread *cur = thread_current();
   uint32_t *pd;
 
@@ -312,9 +313,14 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
     }
   }
 
+  // printf("good so far\n");
+
+  char *fn_copy_page_pt = fn_copy;
   /* Set up stack. */
   if (!setup_stack(esp, fn_copy))
     goto done;
+
+  palloc_free_page(fn_copy_page_pt);
 
   /* Start address. */
   *eip = (void (*)(void))ehdr.e_entry;
@@ -444,12 +450,12 @@ setup_stack(void **esp, char *cmd)
 {
   uint8_t *kpage;
   bool success = false;
-
+  // printf("good so far 2\n");
   kpage = palloc_get_page(PAL_USER | PAL_ZERO);
 
   char *token, *saved_ptr;
   char *argv[30];
-  int argc, i;
+  int argc = 0, i;
   for (token = strtok_r(cmd, " ", &saved_ptr); token != NULL; token = strtok_r(NULL, " ", &saved_ptr))
   {
     argv[argc] = malloc(strlen(token) + 1);
@@ -467,6 +473,7 @@ setup_stack(void **esp, char *cmd)
       {
         *esp = *esp - strlen(argv[i]) - 1;
         strlcpy(*esp, argv[i], strlen(argv[i]) + 1);
+        free(argv[i]);
         argv[i] = *esp;
       }
 

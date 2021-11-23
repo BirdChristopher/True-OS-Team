@@ -3,8 +3,11 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/interrupt.h"
 #include "pagedir.h"
+#include "filesys/filesys.h"
+#include "threads/malloc.h"
+#include "kernel/list.h"
+#include "lib/string.h"
 
 static void
 halt(struct intr_frame *frame)
@@ -55,6 +58,41 @@ remove(struct intr_frame *frame)
 static void
 open(struct intr_frame *frame)
 {
+  struct thread *cur = thread_current();
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 4, 4)) //检查参数地址的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
+
+  char *file_name = *(char **)(frame->esp + 4);
+  if (file_name == NULL || !string_check_valid(cur->pagedir, file_name)) //检查指针所指向空间的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
+
+  // printf("file_name is %s\n", file_name);
+
+  if (*file_name == '\0') //检查文件名合法性
+  {
+    frame->eax = -1;
+    return;
+  }
+  struct file *file = filesys_open(file_name); //检查是否正常打开
+  if (file == NULL)
+  {
+    frame->eax = -1;
+    return;
+  }
+
+  struct fd_item *new_file_item = malloc(sizeof(struct fd_item));
+
+  new_file_item->file = file;
+  new_file_item->fd_num = ++cur->fd_num;
+
+  list_push_back(&cur->fd_list, &new_file_item->elem);
+  frame->eax = cur->fd_num;
   return;
 }
 
@@ -71,7 +109,7 @@ read(struct intr_frame *frame)
 }
 
 static void
-write(struct intr_frame *frame)
+write(struct intr_frame *frame) //todo:没写完
 {
   struct thread *cur = thread_current();
   if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4))
@@ -116,7 +154,31 @@ tell(struct intr_frame *frame)
 static void
 close(struct intr_frame *frame)
 {
-  return;
+  struct thread *cur = thread_current();
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 4, 4))
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
+
+  int fd = *(int *)(frame->esp + 4);
+
+  struct list_elem *e;
+  for (e = list_begin(&cur->fd_list); e != list_end(&cur->fd_list); e = list_next(e))
+  {
+    struct fd_item *item = list_entry(e, struct fd_item, elem);
+    if (item->fd_num == fd)
+    {
+      list_remove(e);
+      file_close(item->file);
+      free(item);
+
+      return;
+    }
+  }
+
+  cur->return_code = -1; //如果关闭了不存在的fd或者fd 0,1,2, 直接报错-1退出
+  thread_exit();
 }
 
 static void syscall_handler(struct intr_frame *);

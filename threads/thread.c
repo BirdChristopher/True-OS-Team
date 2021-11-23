@@ -275,6 +275,19 @@ tid_t thread_tid(void)
   return thread_current()->tid;
 }
 
+void free_fd()
+{
+  struct list_elem *e;
+  struct thread *cur = thread_current();
+  while (!list_empty(&cur->fd_list))
+  {
+    e = list_pop_front(&cur->fd_list);
+    struct fd_item *item = list_entry(e, struct fd_item, elem);
+    file_close(item->file);
+    free(item);
+  }
+}
+
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void thread_exit(void)
@@ -282,7 +295,7 @@ void thread_exit(void)
   ASSERT(!intr_context());
 
   process_exit();
-
+  free_fd();
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -447,13 +460,15 @@ init_thread(struct thread *t, const char *name, int priority)
   ASSERT(t != NULL);
   ASSERT(PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT(name != NULL);
-
+  //TODO:是否需要释放空间？？
   memset(t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->fd_num = 2;
+  list_init(&t->fd_list);
   list_push_back(&all_list, &t->allelem);
 }
 

@@ -279,15 +279,9 @@ invalidate_pagedir(uint32_t *pd)
 bool pointer_check_valid(uint32_t *pd, const void *uaddr, int size)
 {
   uint32_t *pte, *pte_end;
-  if (uaddr == NULL)
+  if (uaddr == NULL || !is_valid_user_pointer(uaddr, size))
   {
-    return NULL;
-  }
-
-  if (!is_valid_user_pointer(uaddr, size))
-  {
-    thread_current()->return_code = -1;
-    thread_exit();
+    return false;
   }
 
   pte = lookup_page(pd, uaddr, false);
@@ -298,4 +292,25 @@ bool pointer_check_valid(uint32_t *pd, const void *uaddr, int size)
   }
   else
     return false;
+}
+
+bool string_check_valid(uint32_t *pd, const char *str_pt)
+{
+  if (str_pt == NULL)
+    return false;
+  int i = 0;
+  while (true)
+  {
+    if (!is_user_vaddr(str_pt + i))
+      return false;
+
+    char *pte = lookup_page(pd, str_pt + i, false);
+    if (pte == NULL || (*pte & PTE_P) == 0)
+      return false;
+
+    if (*(str_pt + i++) != '\0')
+      break;
+  }
+
+  return true;
 }
