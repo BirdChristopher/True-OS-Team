@@ -6,6 +6,7 @@
 #include "pagedir.h"
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
+#include "threads/vaddr.h"
 #include "kernel/list.h"
 #include "lib/string.h"
 
@@ -43,15 +44,67 @@ wait(struct intr_frame *frame)
   return;
 }
 
+
+//todo : 创建文件
 static void
 create(struct intr_frame *frame)
 {
+  struct thread *cur = thread_current();
+  //参数地址frame->esp未定
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 24, 4)) //检查参数地址的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+    // frame->eax = -1;
+    // return;
+  }
+  char *file_name = *(char **)(frame->esp + 16);
+  //创建文件名为空的文件，返回创建失败或直接以 -1 退出。
+  if (file_name == NULL || !string_check_valid(cur->pagedir, file_name) || *file_name == '\0') //检查指针所指向空间的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+    // frame->eax = -1;
+    // return;
+  }
+  // printf("file_name is %s\n", file_name);
+  // printf("file_name is %s\n", *(char **)(frame->esp + 8));
+  // printf("file_name is %s\n", *(char **)(frame->esp + 16));
+  // printf("file_name is %s\n", *(char **)(frame->esp + 20));
+  // printf("file_name is %s\n", *(char **)(frame->esp + 24));
+  // printf("file_name is %s\n", *(char **)(frame->esp + 28));
+  lock_file();
+  off_t size = *(off_t *)(frame->esp + 20);
+  frame->eax = filesys_create(file_name, size);
+  release_file();
   return;
 }
 
+
+//todo : 移除文件
 static void
 remove(struct intr_frame *frame)
 {
+  struct thread *cur = thread_current();
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 4, 4)) //检查参数地址的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+    // frame->eax = -1;
+    // return;
+  }
+  char *file_name = *(char **)(frame->esp + 4);
+  //移除文件名为空的文件，返回创建失败或直接以 -1 退出。
+  if (file_name == NULL || *file_name == '\0' || !string_check_valid(cur->pagedir, file_name)) //检查指针所指向空间的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+    // frame->eax = -1;
+    // return;
+  }
+  lock_file();
+  frame->eax = filesys_remove(file_name);
+  release_file();
   return;
 }
 
@@ -76,6 +129,7 @@ open(struct intr_frame *frame)
 
   if (*file_name == '\0') //检查文件名合法性
   {
+    //fd=-1 lxt
     frame->eax = -1;
     return;
   }
@@ -102,12 +156,66 @@ filesize(struct intr_frame *frame)
   return;
 }
 
+//todo : 读入文件
 static void
 read(struct intr_frame *frame)
 {
-  return;
+  struct thread *cur = thread_current();
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4)) //检查参数地址的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
+  int fd = *(int *)(frame->esp + 20);
+  uint8_t *buffer = *(uint8_t **)(frame->esp + 24);
+
+  off_t size = *(off_t *)(frame->esp + 28);
+  int actual_size = 0;
+
+  //检查buffer是否合法
+  if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
+
+  if (fd == 0)
+  {
+    for (int i = 0; i < size; i++)
+    {
+      buffer[i] = input_getc();
+    }
+    frame->eax = size;
+  }
+
+  else
+  {
+    // printf("1 fd is %d\n", fd);
+    struct file *file = get_file_by_fd(fd);
+    // printf("2\n");
+    if (file != NULL && fd > 2)
+    {
+      // printf("here\n");
+      lock_file();
+      frame->eax = file_read(file, (void *)(frame->esp + 24), size);
+      release_file();
+      // printf("file_size is %d\n", size);
+      // printf("file_act is %d\n", frame->eax);
+      // printf("fd is %d\n", *(int **)(frame->esp + 20));
+      // printf("buffer is %s\n", *(char **)(frame->esp + 24));
+      // while (true)
+      // {
+      // }
+    }
+    else
+    {
+      frame->eax = -1;
+    }
+    return;
+  }
 }
 
+//todo : 写入文件
 static void
 write(struct intr_frame *frame) //todo:没写完
 {
@@ -115,13 +223,18 @@ write(struct intr_frame *frame) //todo:没写完
   if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4))
   {
     cur->return_code = -1;
-    // printf("invalid pt %8x\n", fake_buffer);
     thread_exit();
   }
   int fd = *(int *)(frame->esp + 20);
-  const void *buffer = *(void **)(frame->esp + 24), *fake_buffer;
+  uint8_t *buffer = *(uint8_t **)(frame->esp + 24);
+  int size = *(int *)(frame->esp + 28);
 
-  unsigned size = *(unsigned *)(frame->esp + 28);
+  //检查buffer是否合法
+  if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
 
   //有的时候字符串太长需要截断，这是完全有可能的.
   int actual_size = 0;
@@ -134,9 +247,23 @@ write(struct intr_frame *frame) //todo:没写完
   {
     putbuf(buffer, actual_size);
   }
-
+  else
+  {
+    struct file *file = get_file_by_fd(fd);
+    if (file != NULL && fd > 2)
+    {
+      lock_file();
+      actual_size = file_write(file, buffer, size);
+      release_file();
+    }
+    else
+    {
+      actual_size = -1;
+    }
+  }
   frame->eax = actual_size;
   //返回值
+  return;
 }
 
 static void

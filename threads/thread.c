@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+// 新增文件锁
+static struct lock file_lock;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
 {
@@ -89,6 +92,8 @@ void thread_init(void)
   ASSERT(intr_get_level() == INTR_OFF);
 
   lock_init(&tid_lock);
+  //增加文件锁初始化 
+  lock_init(&file_lock);
   list_init(&ready_list);
   list_init(&all_list);
 
@@ -579,6 +584,30 @@ allocate_tid(void)
   lock_release(&tid_lock);
 
   return tid;
+}
+
+//添加了文件操作函数
+void lock_file(){
+  lock_acquire(&file_lock);
+}
+
+void release_file(){
+  lock_release(&file_lock);
+}
+
+//增加寻找文件函数
+struct file get_file_by_fd(fd){
+  struct list_elem *e;
+  struct thread *cur = thread_current();
+  for (e = list_begin(&cur->fd_list); e != list_end(&cur->fd_list); e = list_next(e))
+  {
+    struct fd_item *item = list_entry(e, struct fd_item, elem);
+    if (item->fd_num == fd)
+    {
+      // printf("file_name is %c\n", *(item->file_name));
+      return item->file;
+    }
+  return NULL;
 }
 
 /* Offset of `stack' member within `struct thread'.
