@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include "filesys/filesys.h"
 #include "filesys/file.h"
-
+#include "synch.h"
 /* States in a thread's life cycle. */
 enum thread_status
 {
@@ -101,9 +101,16 @@ struct thread
    /* Owned by thread.c. */
    unsigned magic;      /* Detects stack overflow. */
    int32_t return_code; //退出码
-
+   struct semaphore return_sem;//退出标志，只有0 1
    struct list fd_list;
    int fd_num;
+   struct semaphore load_sem;//load的信号量结束与否
+   int32_t load_code;//load的状态成功与否
+      //可以回收资源的信号
+   struct semaphore free_sem;
+   struct thread* parent;//定义父进程
+   struct list children_list;//定义子进程组
+   struct list_elem children;//定义子进程
 };
 
 struct fd_item
@@ -149,5 +156,7 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 void free_fd();
-
+//通过pid拿到进程结构体指针
+struct thread*
+search_process_by_pid(int pid);
 #endif /* threads/thread.h */
