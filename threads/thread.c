@@ -92,7 +92,7 @@ void thread_init(void)
   ASSERT(intr_get_level() == INTR_OFF);
 
   lock_init(&tid_lock);
-  //增加文件锁初始化 
+  //增加文件锁初始化
   lock_init(&file_lock);
   list_init(&ready_list);
   list_init(&all_list);
@@ -587,16 +587,19 @@ allocate_tid(void)
 }
 
 //添加了文件操作函数
-void lock_file(){
+void lock_file()
+{
   lock_acquire(&file_lock);
 }
 
-void release_file(){
+void release_file()
+{
   lock_release(&file_lock);
 }
 
 //增加寻找文件函数
-struct file get_file_by_fd(fd){
+struct file *get_file_by_fd(fd)
+{
   struct list_elem *e;
   struct thread *cur = thread_current();
   for (e = list_begin(&cur->fd_list); e != list_end(&cur->fd_list); e = list_next(e))
@@ -607,6 +610,8 @@ struct file get_file_by_fd(fd){
       // printf("file_name is %c\n", *(item->file_name));
       return item->file;
     }
+    return NULL;
+  }
   return NULL;
 }
 

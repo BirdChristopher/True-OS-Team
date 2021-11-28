@@ -44,7 +44,6 @@ wait(struct intr_frame *frame)
   return;
 }
 
-
 //todo : 创建文件
 static void
 create(struct intr_frame *frame)
@@ -79,7 +78,6 @@ create(struct intr_frame *frame)
   release_file();
   return;
 }
-
 
 //todo : 移除文件
 static void
@@ -133,7 +131,9 @@ open(struct intr_frame *frame)
     frame->eax = -1;
     return;
   }
+  lock_file();
   struct file *file = filesys_open(file_name); //检查是否正常打开
+  release_file();
   if (file == NULL)
   {
     frame->eax = -1;
@@ -160,6 +160,7 @@ filesize(struct intr_frame *frame)
 static void
 read(struct intr_frame *frame)
 {
+  lock_file();
   struct thread *cur = thread_current();
   if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4)) //检查参数地址的合法性
   {
@@ -185,6 +186,7 @@ read(struct intr_frame *frame)
     {
       buffer[i] = input_getc();
     }
+    release_file();
     frame->eax = size;
   }
 
@@ -196,7 +198,7 @@ read(struct intr_frame *frame)
     if (file != NULL && fd > 2)
     {
       // printf("here\n");
-      lock_file();
+      // lock_file();
       frame->eax = file_read(file, (void *)(frame->esp + 24), size);
       release_file();
       // printf("file_size is %d\n", size);
@@ -209,6 +211,7 @@ read(struct intr_frame *frame)
     }
     else
     {
+      release_file();
       frame->eax = -1;
     }
     return;
