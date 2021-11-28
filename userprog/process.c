@@ -31,26 +31,28 @@ tid_t process_execute(const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-
   /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). 
+     Otherwise there's a race between the caller and load().
      获取一个新的页，取得这个页的虚拟首地址，然后将filename复制到页处。*/
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
-
   //将参数分解
   char *token, *saved_ptr;
   token = strtok_r(file_name, " ", &saved_ptr);
-
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy);
+  sema_down(&thread_current()->load_sem);//在子进程load结束后才能继续执行
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
+  if(thread_current()->load_code!=0){
+    thread_current()->load_code = 0;
+    return -1;
+  }
+  list_push_back(&thread_current()->children_list, &search_process_by_pid(tid)->children);
   return tid;
 }
-
 /* A thread function that loads a user process and starts it
    running. */
 static void
@@ -66,12 +68,15 @@ start_process(void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load(file_name, &if_.eip, &if_.esp);
+  sema_up(&thread_current()->parent->load_sem);
 
   /* If load failed, quit. */
   palloc_free_page(file_name);
   if (!success)
-    thread_exit();
-
+    {
+      thread_current()->return_code = -1;
+      thread_exit();
+    }
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -95,18 +100,45 @@ start_process(void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(tid_t child_tid UNUSED)
+int process_wait(tid_t child_tid )
 {
-  timer_sleep(5000);
-  return -1;
+  struct thread* child_t= NULL;
+  struct thread *cur_thread = thread_current();
+  struct list_elem *tempe,*begin,*tail;
+  begin = list_begin(&cur_thread->children_list);
+  tail = list_tail(&cur_thread->children_list);
+  for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
+    struct thread *tempthread = list_entry(tempe,struct thread, children);
+    if(tempthread->tid == child_tid){
+      child_t = tempthread;
+    }
+  }
+  if(child_t==NULL){
+    return -1;
+  }
+  sema_down(&child_t->return_sem);
+  int return_code_tmp=child_t->return_code;
+  list_remove(&child_t->children);
+  sema_up(&child_t->free_sem);
+  return return_code_tmp;
 }
 
 /* Free the current process's resources. */
 void process_exit(void)
 {
-  //TODO: 释放所有资源！！！！
   struct thread *cur = thread_current();
   uint32_t *pd;
+
+  //TODO: 释放所有资源！！！！
+  // struct list_elem *tempe,*begin,*tail;
+  // begin = list_begin(&cur->fd_list);
+  // tail = list_tail(&cur->fd_list);
+  // for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
+  //   struct fd_item *temp_fd = list_entry(tempe,struct fd_item, elem);
+  //   list_remove(&temp_fd->elem);
+  //   file_close(temp_fd->file);
+  //   free(temp_fd);
+  // }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -227,8 +259,10 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create();
-  if (t->pagedir == NULL)
+  if (t->pagedir == NULL){
+    t->parent->load_code=-1;
     goto done;
+  }
   process_activate();
 
   char *fn_copy = palloc_get_page(0);
@@ -244,13 +278,22 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   if (file == NULL)
   {
     printf("load: %s: open failed\n", token);
+    t->parent->load_code=-1;
     goto done;
   }
+
+  // file_deny_write
+  file_deny_write(file);
+  struct fd_item *new_file_item = malloc(sizeof(struct fd_item));
+  new_file_item->file = file;
+  new_file_item->fd_num = 0;
+  list_push_back(&t->fd_list, &new_file_item->elem);
 
   /* Read and verify executable header. */
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr || memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 3 || ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Elf32_Phdr) || ehdr.e_phnum > 1024)
   {
     printf("load: %s: error loading executable\n", token);
+    t->parent->load_code=-1;
     goto done;
   }
 
@@ -326,10 +369,10 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   *eip = (void (*)(void))ehdr.e_entry;
 
   success = true;
+  t->load_code = 0;
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close(file);
   return success;
 }
 
@@ -442,7 +485,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. 
+   user virtual memory.
    译：为了给新建线程生成一个栈，将会申请一页并且全部置零，作为新线程的栈，此时intr_frame的esp已经指向
    的是新页的地址*/
 static bool

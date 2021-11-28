@@ -37,9 +37,6 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-// 新增文件锁
-static struct lock file_lock;
-
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
 {
@@ -92,8 +89,6 @@ void thread_init(void)
   ASSERT(intr_get_level() == INTR_OFF);
 
   lock_init(&tid_lock);
-  //增加文件锁初始化
-  lock_init(&file_lock);
   list_init(&ready_list);
   list_init(&all_list);
 
@@ -185,7 +180,7 @@ tid_t thread_create(const char *name, int priority,
   tid = t->tid = allocate_tid();
 
   /* Prepare thread for first run by initializing its stack.
-     Do this atomically so intermediate values for the 'stack' 
+     Do this atomically so intermediate values for the 'stack'
      member cannot be observed. */
   old_level = intr_disable();
 
@@ -306,6 +301,9 @@ void thread_exit(void)
      when it calls thread_schedule_tail(). */
   intr_disable();
   list_remove(&thread_current()->allelem);
+  //让return_sem增一
+  sema_up(&thread_current()->return_sem);
+  sema_down(&thread_current()->free_sem);
   thread_current()->status = THREAD_DYING;
   schedule();
   NOT_REACHED();
@@ -473,10 +471,35 @@ init_thread(struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->fd_num = 2;
+  t->return_code=0;
+  list_init(&t->children_list);
+  //初始化load_sem
+  sema_init(&(t->load_sem),0);
+  //初始化return_sem
+  sema_init(&(t->return_sem),0);
+  // 初始化free_sem
+  sema_init(&(t->free_sem),0);
+  //初始化load_code
+  t->load_code=0;
   list_init(&t->fd_list);
   list_push_back(&all_list, &t->allelem);
+  t->parent=running_thread();
 }
-
+struct thread*
+search_process_by_pid(int pid){
+  struct thread *cur_thread = thread_current();
+  struct list_elem *tempe,*begin,*tail;
+  begin = list_begin(&all_list);
+  tail = list_tail(&all_list);
+  // if(pid < list_entry(begin,struct thread,allelem)->tid || pid > list_entry(list_prev(tail),struct thread,allelem)->tid)
+  //   return NULL;
+  for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
+    struct thread *tempthread = list_entry(tempe,struct thread,allelem);
+    if(tempthread->tid == pid)
+      return tempthread;
+  }
+  return NULL;
+}
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
 static void *
@@ -584,35 +607,6 @@ allocate_tid(void)
   lock_release(&tid_lock);
 
   return tid;
-}
-
-//添加了文件操作函数
-void lock_file()
-{
-  lock_acquire(&file_lock);
-}
-
-void release_file()
-{
-  lock_release(&file_lock);
-}
-
-//增加寻找文件函数
-struct file *get_file_by_fd(fd)
-{
-  struct list_elem *e;
-  struct thread *cur = thread_current();
-  for (e = list_begin(&cur->fd_list); e != list_end(&cur->fd_list); e = list_next(e))
-  {
-    struct fd_item *item = list_entry(e, struct fd_item, elem);
-    if (item->fd_num == fd)
-    {
-      // printf("file_name is %c\n", *(item->file_name));
-      return item->file;
-    }
-    return NULL;
-  }
-  return NULL;
 }
 
 /* Offset of `stack' member within `struct thread'.
