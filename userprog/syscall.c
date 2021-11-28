@@ -185,7 +185,26 @@ open(struct intr_frame *frame)
 static void
 filesize(struct intr_frame *frame)
 {
-  return;
+  lock_file();
+  struct thread *cur = thread_current();
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 20, 4)) //检查参数地址的合法性
+  {
+    cur->return_code = -1;
+    thread_exit();
+  }
+  int fd = *(int *)(frame->esp + 20);
+
+  if(fd == 0 || fd == 1){
+    release_file();
+    return -1;
+  }
+  struct file *file = get_file_by_fd(fd);
+  if(file == NULL){
+    release_file();
+    return -1;
+  }
+  release_file();
+  return file_length(file);
 }
 
 //todo : 读入文件
@@ -196,6 +215,7 @@ read(struct intr_frame *frame)
   struct thread *cur = thread_current();
   if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4)) //检查参数地址的合法性
   {
+    // printf("read check faild!\n");
     cur->return_code = -1;
     thread_exit();
   }
@@ -204,7 +224,7 @@ read(struct intr_frame *frame)
 
   off_t size = *(off_t *)(frame->esp + 28);
   int actual_size = 0;
-
+  // printf("filesys  fd:::::  %d,  size ::: %d\n", fd, size);
   //检查buffer是否合法
   if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
   {
@@ -231,7 +251,7 @@ read(struct intr_frame *frame)
     {
       // printf("here\n");
       // lock_file();
-      frame->eax = file_read(file, (void *)(frame->esp + 24), size);
+      frame->eax = file_read(file, buffer, size);
       release_file();
       // printf("file_size is %d\n", size);
       // printf("file_act is %d\n", frame->eax);
@@ -263,7 +283,7 @@ write(struct intr_frame *frame) //todo:没写完
   int fd = *(int *)(frame->esp + 20);
   uint8_t *buffer = *(uint8_t **)(frame->esp + 24);
   int size = *(int *)(frame->esp + 28);
-
+  // printf("filesys  write  fd:::::  %d,  size ::: %d\n", fd, size);
   //检查buffer是否合法
   if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
   {

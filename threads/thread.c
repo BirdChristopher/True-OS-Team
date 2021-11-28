@@ -306,6 +306,20 @@ void thread_exit(void)
      when it calls thread_schedule_tail(). */
   intr_disable();
   list_remove(&thread_current()->allelem);
+    //TODO: 释放所有资源！！！！
+  struct list_elem *tempe,*begin,*tail;
+  begin = list_begin(&thread_current()->fd_list);
+  tail = list_tail(&thread_current()->fd_list);
+  for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
+    struct fd_item *temp_fd = list_entry(tempe,struct fd_item, elem);
+    list_remove(&temp_fd->elem);
+    // printf("file close  inode:: %d\n", temp_fd->fd_num);
+    if(temp_fd->fd_num == 0){
+      file_allow_write(temp_fd->file);
+    }
+    file_close(temp_fd->file);
+    free(temp_fd);
+  }
   //让return_sem增一
   sema_up(&thread_current()->return_sem);
   sema_down(&thread_current()->free_sem);

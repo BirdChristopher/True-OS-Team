@@ -38,14 +38,20 @@ tid_t process_execute(const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
+  char *fn_copy1 = palloc_get_page(0);
+  if (fn_copy1 == NULL)
+    return TID_ERROR;
+  strlcpy(fn_copy1, file_name, PGSIZE);
   //将参数分解
   char *token, *saved_ptr;
-  token = strtok_r(file_name, " ", &saved_ptr);
+  token = strtok_r(fn_copy, " ", &saved_ptr);
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy1);
   sema_down(&thread_current()->load_sem);//在子进程load结束后才能继续执行
-  if (tid == TID_ERROR)
+  if (tid == TID_ERROR){
     palloc_free_page(fn_copy);
+    palloc_free_page(fn_copy1);
+  }
   if(thread_current()->load_code!=0){
     thread_current()->load_code = 0;
     return -1;
@@ -128,17 +134,6 @@ void process_exit(void)
 {
   struct thread *cur = thread_current();
   uint32_t *pd;
-
-  //TODO: 释放所有资源！！！！
-  // struct list_elem *tempe,*begin,*tail;
-  // begin = list_begin(&cur->fd_list);
-  // tail = list_tail(&cur->fd_list);
-  // for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
-  //   struct fd_item *temp_fd = list_entry(tempe,struct fd_item, elem);
-  //   list_remove(&temp_fd->elem);
-  //   file_close(temp_fd->file);
-  //   free(temp_fd);
-  // }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
