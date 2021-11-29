@@ -111,7 +111,6 @@ create(struct intr_frame *frame)
   return;
 }
 
-
 //todo : 移除文件
 static void
 remove(struct intr_frame *frame)
@@ -194,12 +193,14 @@ filesize(struct intr_frame *frame)
   }
   int fd = *(int *)(frame->esp + 20);
 
-  if(fd == 0 || fd == 1){
+  if (fd == 0 || fd == 1)
+  {
     release_file();
     return -1;
   }
   struct file *file = get_file_by_fd(fd);
-  if(file == NULL){
+  if (file == NULL)
+  {
     release_file();
     return -1;
   }
@@ -324,12 +325,16 @@ write(struct intr_frame *frame) //todo:没写完
 static void
 seek(struct intr_frame *frame)
 {
+  lock_file();
+  release_file();
   return;
 }
 
 static void
 tell(struct intr_frame *frame)
 {
+  lock_file();
+  release_file();
   return;
 }
 
