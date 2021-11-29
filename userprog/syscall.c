@@ -111,7 +111,6 @@ create(struct intr_frame *frame)
   return;
 }
 
-
 //todo : 移除文件
 static void
 remove(struct intr_frame *frame)
@@ -187,27 +186,31 @@ filesize(struct intr_frame *frame)
 {
   lock_file();
   struct thread *cur = thread_current();
-  if (!pointer_check_valid(cur->pagedir, frame->esp + 20, 4)) //检查参数地址的合法性
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 4, 4)) //检查参数地址的合法性
   {
     cur->return_code = -1;
     thread_exit();
   }
-  int fd = *(int *)(frame->esp + 20);
+  int fd = *(int *)(frame->esp + 4);
 
-  if(fd == 0 || fd == 1){
+  if (fd == 0 || fd == 1)
+  {
     release_file();
+    frame->eax = -1;
     return -1;
   }
   struct file *file = get_file_by_fd(fd);
-  if(file == NULL){
+  if (file == NULL)
+  {
     release_file();
+    frame->eax = -1;
     return -1;
   }
   release_file();
+  frame->eax = file_length(file);
   return file_length(file);
 }
 
-//todo : 读入文件
 static void
 read(struct intr_frame *frame)
 {
@@ -224,7 +227,6 @@ read(struct intr_frame *frame)
 
   off_t size = *(off_t *)(frame->esp + 28);
   int actual_size = 0;
-  // printf("filesys  fd:::::  %d,  size ::: %d\n", fd, size);
   //检查buffer是否合法
   if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
   {
@@ -244,22 +246,15 @@ read(struct intr_frame *frame)
 
   else
   {
-    // printf("1 fd is %d\n", fd);
     struct file *file = get_file_by_fd(fd);
-    // printf("2\n");
     if (file != NULL && fd > 2)
     {
-      // printf("here\n");
-      // lock_file();
       frame->eax = file_read(file, buffer, size);
+      // printf("--------------------------buffer is:\n%s\n", buffer);
+      // printf("--------------------------length is %d\n", strlen(buffer));
+      // printf("--------------------------return num is %d\n", frame->eax);
+      // printf("--------------------------last char is %d\n", *(buffer + strlen(buffer) - 1));
       release_file();
-      // printf("file_size is %d\n", size);
-      // printf("file_act is %d\n", frame->eax);
-      // printf("fd is %d\n", *(int **)(frame->esp + 20));
-      // printf("buffer is %s\n", *(char **)(frame->esp + 24));
-      // while (true)
-      // {
-      // }
     }
     else
     {
