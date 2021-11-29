@@ -47,12 +47,14 @@ tid_t process_execute(const char *file_name)
   token = strtok_r(fn_copy, " ", &saved_ptr);
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy1);
-  sema_down(&thread_current()->load_sem);//在子进程load结束后才能继续执行
-  if (tid == TID_ERROR){
+  sema_down(&thread_current()->load_sem); //在子进程load结束后才能继续执行
+  if (tid == TID_ERROR)
+  {
     palloc_free_page(fn_copy);
     palloc_free_page(fn_copy1);
   }
-  if(thread_current()->load_code!=0){
+  if (thread_current()->load_code != 0)
+  {
     thread_current()->load_code = 0;
     return -1;
   }
@@ -79,10 +81,10 @@ start_process(void *file_name_)
   /* If load failed, quit. */
   palloc_free_page(file_name);
   if (!success)
-    {
-      thread_current()->return_code = -1;
-      thread_exit();
-    }
+  {
+    thread_current()->return_code = -1;
+    thread_exit();
+  }
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -106,24 +108,27 @@ start_process(void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(tid_t child_tid )
+int process_wait(tid_t child_tid)
 {
-  struct thread* child_t= NULL;
+  struct thread *child_t = NULL;
   struct thread *cur_thread = thread_current();
-  struct list_elem *tempe,*begin,*tail;
+  struct list_elem *tempe, *begin, *tail;
   begin = list_begin(&cur_thread->children_list);
   tail = list_tail(&cur_thread->children_list);
-  for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
-    struct thread *tempthread = list_entry(tempe,struct thread, children);
-    if(tempthread->tid == child_tid){
+  for (tempe = begin; tempe != tail; tempe = list_next(tempe))
+  {
+    struct thread *tempthread = list_entry(tempe, struct thread, children);
+    if (tempthread->tid == child_tid)
+    {
       child_t = tempthread;
     }
   }
-  if(child_t==NULL){
+  if (child_t == NULL)
+  {
     return -1;
   }
   sema_down(&child_t->return_sem);
-  int return_code_tmp=child_t->return_code;
+  int return_code_tmp = child_t->return_code;
   list_remove(&child_t->children);
   sema_up(&child_t->free_sem);
   return return_code_tmp;
@@ -133,6 +138,23 @@ int process_wait(tid_t child_tid )
 void process_exit(void)
 {
   struct thread *cur = thread_current();
+
+  //TODO: 释放所有资源！！！！
+  struct list_elem *tempe, *begin, *tail;
+  begin = list_begin(&thread_current()->fd_list);
+  tail = list_tail(&thread_current()->fd_list);
+  for (tempe = begin; tempe != tail; tempe = list_next(tempe))
+  {
+    struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
+    list_remove(&temp_fd->elem);
+    // printf("file close  inode:: %d\n", temp_fd->fd_num);
+    if (temp_fd->fd_num == 0)
+    {
+      file_allow_write(temp_fd->file);
+    }
+    file_close(temp_fd->file);
+  }
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -254,8 +276,9 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create();
-  if (t->pagedir == NULL){
-    t->parent->load_code=-1;
+  if (t->pagedir == NULL)
+  {
+    t->parent->load_code = -1;
     goto done;
   }
   process_activate();
@@ -273,7 +296,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   if (file == NULL)
   {
     printf("load: %s: open failed\n", token);
-    t->parent->load_code=-1;
+    t->parent->load_code = -1;
     goto done;
   }
 
@@ -288,7 +311,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr || memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 3 || ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Elf32_Phdr) || ehdr.e_phnum > 1024)
   {
     printf("load: %s: error loading executable\n", token);
-    t->parent->load_code=-1;
+    t->parent->load_code = -1;
     goto done;
   }
 
@@ -368,6 +391,10 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
+  if (!success)
+  {
+    file_close(file);
+  }
   return success;
 }
 

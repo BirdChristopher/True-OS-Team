@@ -319,12 +319,16 @@ write(struct intr_frame *frame) //todo:没写完
 static void
 seek(struct intr_frame *frame)
 {
+  lock_file();
+  release_file();
   return;
 }
 
 static void
 tell(struct intr_frame *frame)
 {
+  lock_file();
+  release_file();
   return;
 }
 
