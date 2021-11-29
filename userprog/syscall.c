@@ -320,6 +320,33 @@ static void
 seek(struct intr_frame *frame)
 {
   lock_file();
+  struct thread *cur = thread_current();
+  // printf("seek 1111111111\n");
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 16, 4)) //检查参数地址的合法性
+  {
+    // printf("read check faild!\n");
+    cur->return_code = -1;
+    thread_exit();
+  }
+  int fd = *(int *)(frame->esp + 16);
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 20, 4)) //检查参数地址的合法性
+  {
+    // printf("read check faild!\n");
+    cur->return_code = -1;
+    thread_exit();
+  }
+  int position = *(int *)(frame->esp + 20);
+  // printf("seek %d   %d\n", fd, position);
+  if (fd == 0 || fd == 1)
+    exit(-1);
+  struct file *file = get_file_by_fd(fd);
+  if (file == NULL)
+  {
+    // printf("file is null.\n");
+    exit(-1);
+  }
+  // printf("file get\n");
+  file_seek(file, position);
   release_file();
   return;
 }
