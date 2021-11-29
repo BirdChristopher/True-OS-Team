@@ -208,7 +208,7 @@ filesize(struct intr_frame *frame)
   }
   release_file();
   frame->eax = file_length(file);
-  return file_length(file);
+  return;
 }
 
 static void
