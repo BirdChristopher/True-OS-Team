@@ -54,7 +54,9 @@ exec(struct intr_frame *frame)
     thread_exit();
   }
   // printf("before process execute\n");
+  lock_file();
   pid_t pid = process_execute(file_name);
+  release_file();
   // printf("pid: %d", pid);
   frame->eax = pid;
 }
@@ -184,7 +186,7 @@ open(struct intr_frame *frame)
 static void
 filesize(struct intr_frame *frame)
 {
-  lock_file();
+  // lock_file();
   struct thread *cur = thread_current();
   if (!pointer_check_valid(cur->pagedir, frame->esp + 4, 4)) //检查参数地址的合法性
   {
@@ -195,19 +197,21 @@ filesize(struct intr_frame *frame)
 
   if (fd == 0 || fd == 1)
   {
-    release_file();
+    // release_file();
     frame->eax = -1;
     return -1;
   }
   struct file *file = get_file_by_fd(fd);
   if (file == NULL)
   {
-    release_file();
+    // release_file();
     frame->eax = -1;
     return -1;
   }
-  release_file();
+  // release_file();
+  lock_file();
   frame->eax = file_length(file);
+  release_file();
   return file_length(file);
 }
 
@@ -220,6 +224,7 @@ read(struct intr_frame *frame)
   {
     // printf("read check faild!\n");
     cur->return_code = -1;
+    release_file();
     thread_exit();
   }
   int fd = *(int *)(frame->esp + 20);
@@ -231,6 +236,7 @@ read(struct intr_frame *frame)
   if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
   {
     cur->return_code = -1;
+    release_file();
     thread_exit();
   }
 
@@ -288,14 +294,20 @@ write(struct intr_frame *frame) //todo:没写完
 
   //有的时候字符串太长需要截断，这是完全有可能的.
   int actual_size = 0;
-  while (actual_size < size)
+  if (actual_size < size)
   {
-    actual_size++;
+    actual_size = size;
   }
+  // while (actual_size < size)
+  // {
+  //   actual_size++;
+  // }
 
   if (fd == 1)
   {
+    lock_file();
     putbuf(buffer, actual_size);
+    release_file();
   }
   else
   {
@@ -319,7 +331,41 @@ write(struct intr_frame *frame) //todo:没写完
 static void
 seek(struct intr_frame *frame)
 {
+  struct thread *cur = thread_current();
+  // printf("seek 1111111111\n");
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 16, 4)) //检查参数地址的合法性
+  {
+    // printf("read check faild!\n");
+    cur->return_code = -1;
+    thread_exit();
+  }
+  int fd = *(int *)(frame->esp + 16);
+  // printf("seek +4: %d\n", *(int *)(frame->esp + 4));
+  // printf("seek +8: %d\n", *(int *)(frame->esp + 8));
+  // printf("seek +12: %d\n", *(int *)(frame->esp + 12));
+  // printf("seek +16: %d\n", *(int *)(frame->esp + 16));
+  // printf("seek +20: %d\n", *(int *)(frame->esp + 20));
+  // printf("seek +24: %d\n", *(int *)(frame->esp + 24));
+  // printf("seek +28: %d\n", *(int *)(frame->esp + 28));
+  if (!pointer_check_valid(cur->pagedir, frame->esp + 20, 4)) //检查参数地址的合法性
+  {
+    // printf("read check faild!\n");
+    cur->return_code = -1;
+    thread_exit();
+  }
+  int position = *(int *)(frame->esp + 20);
+  // printf("seek %d   %d\n", fd, position);
+  if (fd == 0 || fd == 1)
+    exit(-1);
+  struct file *file = get_file_by_fd(fd);
+  if (file == NULL)
+  {
+    // printf("file is null.\n");
+    exit(-1);
+  }
+  // printf("file get\n");
   lock_file();
+  file_seek(file, position);
   release_file();
   return;
 }
@@ -350,10 +396,12 @@ close(struct intr_frame *frame)
     struct fd_item *item = list_entry(e, struct fd_item, elem);
     if (item->fd_num == fd)
     {
+      lock_file();
       list_remove(e);
       file_close(item->file);
+      // release_file();
       free(item);
-
+      release_file();
       return;
     }
   }

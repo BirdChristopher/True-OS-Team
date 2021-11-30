@@ -37,7 +37,7 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-// 新增文件锁
+//新增文件锁
 static struct lock file_lock;
 
 /* Stack frame for kernel_thread(). */
@@ -306,15 +306,17 @@ void thread_exit(void)
      when it calls thread_schedule_tail(). */
   intr_disable();
   list_remove(&thread_current()->allelem);
-    //TODO: 释放所有资源！！！！
-  struct list_elem *tempe,*begin,*tail;
+  //TODO: 释放所有资源！！！！
+  struct list_elem *tempe, *begin, *tail;
   begin = list_begin(&thread_current()->fd_list);
   tail = list_tail(&thread_current()->fd_list);
-  for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
-    struct fd_item *temp_fd = list_entry(tempe,struct fd_item, elem);
+  for (tempe = begin; tempe != tail; tempe = list_next(tempe))
+  {
+    struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
     list_remove(&temp_fd->elem);
     // printf("file close  inode:: %d\n", temp_fd->fd_num);
-    if(temp_fd->fd_num == 0){
+    if (temp_fd->fd_num == 0)
+    {
       file_allow_write(temp_fd->file);
     }
     file_close(temp_fd->file);
@@ -490,31 +492,33 @@ init_thread(struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->fd_num = 2;
-  t->return_code=0;
+  t->return_code = 0;
   list_init(&t->children_list);
   //初始化load_sem
-  sema_init(&(t->load_sem),0);
+  sema_init(&(t->load_sem), 0);
   //初始化return_sem
-  sema_init(&(t->return_sem),0);
+  sema_init(&(t->return_sem), 0);
   // 初始化free_sem
-  sema_init(&(t->free_sem),0);
+  sema_init(&(t->free_sem), 0);
   //初始化load_code
-  t->load_code=0;
+  t->load_code = 0;
   list_init(&t->fd_list);
   list_push_back(&all_list, &t->allelem);
-  t->parent=running_thread();
+  t->parent = running_thread();
 }
-struct thread*
-search_process_by_pid(int pid){
+struct thread *
+search_process_by_pid(int pid)
+{
   struct thread *cur_thread = thread_current();
-  struct list_elem *tempe,*begin,*tail;
+  struct list_elem *tempe, *begin, *tail;
   begin = list_begin(&all_list);
   tail = list_tail(&all_list);
   // if(pid < list_entry(begin,struct thread,allelem)->tid || pid > list_entry(list_prev(tail),struct thread,allelem)->tid)
   //   return NULL;
-  for(tempe = begin; tempe != tail; tempe = list_next(tempe)){
-    struct thread *tempthread = list_entry(tempe,struct thread,allelem);
-    if(tempthread->tid == pid)
+  for (tempe = begin; tempe != tail; tempe = list_next(tempe))
+  {
+    struct thread *tempthread = list_entry(tempe, struct thread, allelem);
+    if (tempthread->tid == pid)
       return tempthread;
   }
   return NULL;
@@ -629,16 +633,19 @@ allocate_tid(void)
 }
 
 //添加了文件操作函数
-void lock_file(){
+void lock_file()
+{
   lock_acquire(&file_lock);
 }
 
-void release_file(){
+void release_file()
+{
   lock_release(&file_lock);
 }
 
 //增加寻找文件函数
-struct file* get_file_by_fd(fd){
+struct file *get_file_by_fd(fd)
+{
   struct list_elem *e;
   struct thread *cur = thread_current();
   for (e = list_begin(&cur->fd_list); e != list_end(&cur->fd_list); e = list_next(e))
