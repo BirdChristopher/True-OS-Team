@@ -140,20 +140,20 @@ void process_exit(void)
   struct thread *cur = thread_current();
 
   //TODO: 释放所有资源！！！！
-  struct list_elem *tempe, *begin, *tail;
-  begin = list_begin(&thread_current()->fd_list);
-  tail = list_tail(&thread_current()->fd_list);
-  for (tempe = begin; tempe != tail; tempe = list_next(tempe))
-  {
-    struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
-    list_remove(&temp_fd->elem);
-    // printf("file close  inode:: %d\n", temp_fd->fd_num);
-    if (temp_fd->fd_num == 0)
-    {
-      file_allow_write(temp_fd->file);
-    }
-    file_close(temp_fd->file);
-  }
+  // struct list_elem *tempe, *begin, *tail;
+  // begin = list_begin(&thread_current()->fd_list);
+  // tail = list_tail(&thread_current()->fd_list);
+  // for (tempe = begin; tempe != tail; tempe = list_next(tempe))
+  // {
+  //   struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
+  //   list_remove(&temp_fd->elem);
+  //   // printf("file close  inode:: %d\n", temp_fd->fd_num);
+  //   if (temp_fd->fd_num == 0)
+  //   {
+  //     file_allow_write(temp_fd->file);
+  //   }
+  //   file_close(temp_fd->file);
+  // }
 
   uint32_t *pd;
 
@@ -301,11 +301,11 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   }
 
   // file_deny_write
-  file_deny_write(file);
   struct fd_item *new_file_item = malloc(sizeof(struct fd_item));
   new_file_item->file = file;
-  new_file_item->fd_num = 0;
+  new_file_item->fd_num = -1;
   list_push_back(&t->fd_list, &new_file_item->elem);
+  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr || memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 3 || ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Elf32_Phdr) || ehdr.e_phnum > 1024)
@@ -391,10 +391,10 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
-  if (!success)
-  {
-    file_close(file);
-  }
+  // if (!success)
+  // {
+  //   file_close(file);
+  // }
   return success;
 }
 
