@@ -106,11 +106,12 @@ struct thread
    int fd_num;
    struct semaphore load_sem; //load的信号量结束与否
    int32_t load_code;         //load的状态成功与否
-       //可以回收资源的信号
+                              //可以回收资源的信号
    struct semaphore free_sem;
    struct thread *parent;     //定义父进程
    struct list children_list; //定义子进程组
    struct list_elem children; //定义子进程
+   bool EXEC_CHILD_PROC;
 };
 
 struct fd_item
@@ -142,6 +143,7 @@ tid_t thread_tid(void);
 const char *thread_name(void);
 
 void thread_exit(void) NO_RETURN;
+void thread_exit_child(void) NO_RETURN;
 void thread_yield(void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */

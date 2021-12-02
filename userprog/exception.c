@@ -70,7 +70,12 @@ void exception_print_stats(void)
 static void
 kill(struct intr_frame *f)
 {
+   // printf("-1 in kill()\n");
    thread_current()->return_code = -1;
+   if (thread_current()->parent != NULL)
+   {
+      sema_up(&thread_current()->parent->load_sem);
+   }
    thread_exit();
 
    /* This interrupt is one (probably) caused by a user process.

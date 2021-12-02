@@ -27,67 +27,70 @@
 static const int EXPECTED_DEPTH_TO_PASS = 30;
 static const int EXPECTED_REPETITIONS = 10;
 
-enum child_termination_mode { RECURSE, CRASH };
+enum child_termination_mode
+{
+  RECURSE,
+  CRASH
+};
 
 /* Spawn a recursive copy of ourselves, passing along instructions
    for the child. */
 static pid_t
-spawn_child (int c, enum child_termination_mode mode)
+spawn_child(int c, enum child_termination_mode mode)
 {
   char child_cmd[128];
-  snprintf (child_cmd, sizeof child_cmd,
-            "%s %d %s", test_name, c, mode == CRASH ? "-k" : "");
-  return exec (child_cmd);
+  snprintf(child_cmd, sizeof child_cmd,
+           "%s %d %s", test_name, c, mode == CRASH ? "-k" : "");
+  return exec(child_cmd);
 }
 
 /* Open a number of files (and fail to close them).
    The kernel must free any kernel resources associated
    with these file descriptors. */
 static void
-consume_some_resources (void)
+consume_some_resources(void)
 {
   int fd, fdmax = 126;
-
   /* Open as many files as we can, up to fdmax.
      Depending on how file descriptors are allocated inside
      the kernel, open() may fail if the kernel is low on memory.
      A low-memory condition in open() should not lead to the
      termination of the process.  */
   for (fd = 0; fd < fdmax; fd++)
-    if (open (test_name) == -1)
+    if (open(test_name) == -1)
       break;
 }
 
 /* Consume some resources, then terminate this process
    in some abnormal way.  */
 static int NO_INLINE
-consume_some_resources_and_die (int seed)
+consume_some_resources_and_die(int seed)
 {
-  consume_some_resources ();
-  random_init (seed);
+  consume_some_resources();
+  random_init(seed);
   volatile int *PHYS_BASE = (volatile int *)0xC0000000;
 
-  switch (random_ulong () % 5)
-    {
-      case 0:
-        *(volatile int *) NULL = 42;
+  switch (random_ulong() % 5)
+  {
+  case 0:
+    *(volatile int *)NULL = 42;
 
-      case 1:
-        return *(volatile int *) NULL;
+  case 1:
+    return *(volatile int *)NULL;
 
-      case 2:
-        return *PHYS_BASE;
+  case 2:
+    return *PHYS_BASE;
 
-      case 3:
-        *PHYS_BASE = 42;
+  case 3:
+    *PHYS_BASE = 42;
 
-      case 4:
-        open ((char *)PHYS_BASE);
-        exit (-1);
+  case 4:
+    open((char *)PHYS_BASE);
+    exit(-1);
 
-      default:
-        NOT_REACHED ();
-    }
+  default:
+    NOT_REACHED();
+  }
   return 0;
 }
 
@@ -100,80 +103,87 @@ consume_some_resources_and_die (int seed)
    Some children are started with the '-k' flag, which will
    result in abnormal termination.
  */
-int
-main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int n;
 
   test_name = "multi-oom";
-
-  n = argc > 1 ? atoi (argv[1]) : 0;
+  // msg("level %d,step1", n);
+  n = argc > 1 ? atoi(argv[1]) : 0;
   bool is_at_root = (n == 0);
   if (is_at_root)
-    msg ("begin");
+    msg("begin");
 
+  // msg("1");
   /* If -k is passed, crash this process. */
   if (argc > 2 && !strcmp(argv[2], "-k"))
-    {
-      consume_some_resources_and_die (n);
-      NOT_REACHED ();
-    }
-
+  {
+    consume_some_resources_and_die(n);
+    NOT_REACHED();
+  }
   int howmany = is_at_root ? EXPECTED_REPETITIONS : 1;
   int i, expected_depth = -1;
-
+  // msg("2");
   for (i = 0; i < howmany; i++)
-    {
-      pid_t child_pid;
-
-      /* Spawn a child that will be abnormally terminated.
+  {
+    pid_t child_pid;
+    /* Spawn a child that will be abnormally terminated.
          To speed the test up, do this only for processes
          spawned at a certain depth. */
-      if (n > EXPECTED_DEPTH_TO_PASS/2)
+    if (n > EXPECTED_DEPTH_TO_PASS / 2)
+    {
+      // msg("2->3");
+      child_pid = spawn_child(n + 1, CRASH);
+      // msg("3");
+      if (child_pid != -1)
+      {
+        if (wait(child_pid) != -1) //此处应该返回-1
         {
-          child_pid = spawn_child (n + 1, CRASH);
-          if (child_pid != -1)
-            {
-              if (wait (child_pid) != -1)
-                fail ("crashed child should return -1.");
-            }
-          /* If spawning this child failed, so should
-             the next spawn_child below. */
+          // msg("3.1");
+          fail("crashed child should return -1.");
         }
+      }
+      /* If spawning this child failed, so should
+             the next spawn_child below. */
+    }
+    // msg("4");
+    /* Now spawn the child that will recurse. */
+    child_pid = spawn_child(n + 1, RECURSE);
+    // msg("after spwan child,i=%d,n=%d", i, n);
+    // msg("5");
+    /* If maximum depth is reached, return result. */
+    if (child_pid == -1)
+    {
+      return n;
+    }
+    /* Else wait for child to report how deeply it was able to recurse. */
+    int reached_depth = wait(child_pid); //此处不能返回-1
+    // msg("wait for spawn_child done,reached depth is %d", reached_depth);
+    if (reached_depth == -1)
+      fail("wait returned -1.n is %d", n);
 
-      /* Now spawn the child that will recurse. */
-      child_pid = spawn_child (n + 1, RECURSE);
-
-      /* If maximum depth is reached, return result. */
-      if (child_pid == -1)
-        return n;
-
-      /* Else wait for child to report how deeply it was able to recurse. */
-      int reached_depth = wait (child_pid);
-      if (reached_depth == -1)
-        fail ("wait returned -1.");
-
-      /* Record the depth reached during the first run; on subsequent
+    /* Record the depth reached during the first run; on subsequent
          runs, fail if those runs do not match the depth achieved on the
          first run. */
-      if (i == 0)
-        expected_depth = reached_depth;
-      else if (expected_depth != reached_depth)
-        fail ("after run %d/%d, expected depth %d, actual depth %d.",
-              i, howmany, expected_depth, reached_depth);
-      ASSERT (expected_depth == reached_depth);
-    }
+    if (i == 0)
+      expected_depth = reached_depth;
+    else if (expected_depth != reached_depth)
+      fail("after run %d/%d, expected depth %d, actual depth %d.",
+           i, howmany, expected_depth, reached_depth);
+    // msg("checkpoint in multi-oom.c");
+    ASSERT(expected_depth == reached_depth);
+  }
 
-  consume_some_resources ();
+  // msg("level %d,step7", n);
+  consume_some_resources();
 
   if (n == 0)
-    {
-      if (expected_depth < EXPECTED_DEPTH_TO_PASS)
-        fail ("should have forked at least %d times.",EXPECTED_DEPTH_TO_PASS);
-      msg ("success. program forked %d times.", howmany);
-      msg ("end");
-    }
-
+  {
+    if (expected_depth < EXPECTED_DEPTH_TO_PASS)
+      fail("should have forked at least %d times.", EXPECTED_DEPTH_TO_PASS);
+    msg("success. program forked %d times.", howmany);
+    msg("end");
+  }
   return expected_depth;
 }
 // vim: sw=2

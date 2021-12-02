@@ -35,11 +35,11 @@ exit(struct intr_frame *frame)
   thread_exit();
 }
 
+//即使是空间不够也应返回-1
 static void
 exec(struct intr_frame *frame)
 {
   struct thread *cur = thread_current();
-  void *kernel_esp = frame->esp;
   if (!pointer_check_valid(cur->pagedir, frame->esp + 4, 4))
   {
     cur->return_code = -1;
@@ -53,14 +53,15 @@ exec(struct intr_frame *frame)
     cur->return_code = -1;
     thread_exit();
   }
-  // printf("before process execute\n");
   lock_file();
-  pid_t pid = process_execute(file_name);
+  // printf("before process_execute_child\n");
+  pid_t pid = process_execute_child(file_name);
   release_file();
   // printf("pid: %d", pid);
   frame->eax = pid;
 }
 
+//空间不够时不应返回-1
 static void
 wait(struct intr_frame *frame)
 {
@@ -77,6 +78,7 @@ wait(struct intr_frame *frame)
   // printf("syscall wait %d\n", pid);
   int return_code = process_wait(pid);
   frame->eax = return_code;
+  // printf("return from process wait,now can return : %d\n", cur->tid);
 }
 
 static void
@@ -122,8 +124,6 @@ remove(struct intr_frame *frame)
   {
     cur->return_code = -1;
     thread_exit();
-    // frame->eax = -1;
-    // return;
   }
   char *file_name = *(char **)(frame->esp + 4);
   //移除文件名为空的文件，返回创建失败或直接以 -1 退出。
@@ -131,12 +131,11 @@ remove(struct intr_frame *frame)
   {
     cur->return_code = -1;
     thread_exit();
-    // frame->eax = -1;
-    // return;
   }
   lock_file();
   frame->eax = filesys_remove(file_name);
   release_file();
+  struct list_elem e;
   return;
 }
 
@@ -174,6 +173,12 @@ open(struct intr_frame *frame)
   }
 
   struct fd_item *new_file_item = malloc(sizeof(struct fd_item));
+
+  if (new_file_item == NULL)
+  {
+    frame->eax = -1;
+    return;
+  }
 
   new_file_item->file = file;
   new_file_item->fd_num = ++cur->fd_num;
@@ -222,7 +227,6 @@ read(struct intr_frame *frame)
   struct thread *cur = thread_current();
   if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4)) //检查参数地址的合法性
   {
-    // printf("read check faild!\n");
     cur->return_code = -1;
     release_file();
     thread_exit();
@@ -233,7 +237,7 @@ read(struct intr_frame *frame)
   off_t size = *(off_t *)(frame->esp + 28);
   int actual_size = 0;
   //检查buffer是否合法
-  if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
+  if (!pointer_check_valid(cur->pagedir, buffer, size))
   {
     cur->return_code = -1;
     release_file();
@@ -256,10 +260,6 @@ read(struct intr_frame *frame)
     if (file != NULL && fd > 2)
     {
       frame->eax = file_read(file, buffer, size);
-      // printf("--------------------------buffer is:\n%s\n", buffer);
-      // printf("--------------------------length is %d\n", strlen(buffer));
-      // printf("--------------------------return num is %d\n", frame->eax);
-      // printf("--------------------------last char is %d\n", *(buffer + strlen(buffer) - 1));
       release_file();
     }
     else
@@ -286,7 +286,7 @@ write(struct intr_frame *frame) //todo:没写完
   int size = *(int *)(frame->esp + 28);
   // printf("filesys  write  fd:::::  %d,  size ::: %d\n", fd, size);
   //检查buffer是否合法
-  if (!is_valid_user_pointer(buffer, 1) || !is_valid_user_pointer(buffer + size, 1))
+  if (!string_check_valid(cur->pagedir, buffer))
   {
     cur->return_code = -1;
     thread_exit();
@@ -298,10 +298,6 @@ write(struct intr_frame *frame) //todo:没写完
   {
     actual_size = size;
   }
-  // while (actual_size < size)
-  // {
-  //   actual_size++;
-  // }
 
   if (fd == 1)
   {
@@ -340,13 +336,6 @@ seek(struct intr_frame *frame)
     thread_exit();
   }
   int fd = *(int *)(frame->esp + 16);
-  // printf("seek +4: %d\n", *(int *)(frame->esp + 4));
-  // printf("seek +8: %d\n", *(int *)(frame->esp + 8));
-  // printf("seek +12: %d\n", *(int *)(frame->esp + 12));
-  // printf("seek +16: %d\n", *(int *)(frame->esp + 16));
-  // printf("seek +20: %d\n", *(int *)(frame->esp + 20));
-  // printf("seek +24: %d\n", *(int *)(frame->esp + 24));
-  // printf("seek +28: %d\n", *(int *)(frame->esp + 28));
   if (!pointer_check_valid(cur->pagedir, frame->esp + 20, 4)) //检查参数地址的合法性
   {
     // printf("read check faild!\n");
@@ -360,10 +349,8 @@ seek(struct intr_frame *frame)
   struct file *file = get_file_by_fd(fd);
   if (file == NULL)
   {
-    // printf("file is null.\n");
     exit(-1);
   }
-  // printf("file get\n");
   lock_file();
   file_seek(file, position);
   release_file();

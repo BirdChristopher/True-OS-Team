@@ -3,9 +3,11 @@
 
 #include "threads/thread.h"
 
-tid_t process_execute (const char *file_name);
-int process_wait (tid_t);
-void process_exit (void);
-void process_activate (void);
+tid_t process_execute(const char *file_name);
+tid_t process_execute_child(const char *file_name);
+int process_wait(tid_t);
+void process_exit(void);
+void process_exit_child(void);
+void process_activate(void);
 
 #endif /* userprog/process.h */

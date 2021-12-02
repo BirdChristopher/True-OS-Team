@@ -208,7 +208,6 @@ tid_t thread_create(const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock(t);
-
   return tid;
 }
 
@@ -288,11 +287,11 @@ void free_fd()
   {
     e = list_pop_front(&cur->fd_list);
     struct fd_item *item = list_entry(e, struct fd_item, elem);
+    file_close(item->file);
     if (item->fd_num == -1)
     {
       file_allow_write(item->file);
     }
-    file_close(item->file);
     free(item);
   }
 }
@@ -310,25 +309,10 @@ void thread_exit(void)
      when it calls thread_schedule_tail(). */
   intr_disable();
   list_remove(&thread_current()->allelem);
-  //TODO: 释放所有资源！！！！
   struct list_elem *tempe, *begin, *tail;
-  begin = list_begin(&thread_current()->fd_list);
-  tail = list_tail(&thread_current()->fd_list);
-  for (tempe = begin; tempe != tail; tempe = list_next(tempe))
-  {
-    struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
-    list_remove(&temp_fd->elem);
-    // printf("file close  inode:: %d\n", temp_fd->fd_num);
-    if (temp_fd->fd_num == 0)
-    {
-      file_allow_write(temp_fd->file);
-    }
-    file_close(temp_fd->file);
-    free(temp_fd);
-  }
-  // struct list_elem *tempe, *begin, *tail;
   // begin = list_begin(&thread_current()->fd_list);
   // tail = list_tail(&thread_current()->fd_list);
+
   // for (tempe = begin; tempe != tail; tempe = list_next(tempe))
   // {
   //   struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
@@ -341,9 +325,14 @@ void thread_exit(void)
   //   file_close(temp_fd->file);
   //   free(temp_fd);
   // }
+
   //让return_sem增一
   sema_up(&thread_current()->return_sem);
   sema_down(&thread_current()->free_sem);
+  if (thread_current()->parent != NULL)
+  {
+    sema_up(&thread_current()->parent->load_sem);
+  }
   thread_current()->status = THREAD_DYING;
   schedule();
   NOT_REACHED();
@@ -503,15 +492,16 @@ init_thread(struct thread *t, const char *name, int priority)
   ASSERT(t != NULL);
   ASSERT(PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT(name != NULL);
-  //TODO:是否需要释放空间？？
   memset(t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy(t->name, name, sizeof t->name);
+  // palloc_free_page(name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->fd_num = 2;
   t->return_code = 0;
+  t->EXEC_CHILD_PROC = false;
   list_init(&t->children_list);
   //初始化load_sem
   sema_init(&(t->load_sem), 0);
@@ -682,3 +672,26 @@ struct file *get_file_by_fd(fd)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
+
+void thread_exit_child(void)
+{
+  ASSERT(!intr_context());
+
+  process_exit_child();
+  // free_fd();
+  /* Remove thread from all threads list, set our status to dying,
+     and schedule another process.  That process will destroy us
+     when it calls thread_schedule_tail(). */
+  intr_disable();
+  list_remove(&thread_current()->allelem);
+  struct list_elem *tempe, *begin, *tail;
+  sema_up(&thread_current()->return_sem);
+  sema_down(&thread_current()->free_sem);
+  if (thread_current()->parent != NULL)
+  {
+    sema_up(&thread_current()->parent->load_sem);
+  }
+  thread_current()->status = THREAD_DYING;
+  schedule();
+  NOT_REACHED();
+}

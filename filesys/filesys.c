@@ -64,7 +64,10 @@ filesys_open(const char *name)
   struct inode *inode = NULL;
 
   if (dir != NULL)
+  {
     dir_lookup(dir, name, &inode);
+    struct inode *node = inode;
+  }
   dir_close(dir);
 
   return file_open(inode);
@@ -72,7 +75,7 @@ filesys_open(const char *name)
 
 /* Deletes the file named NAME.
    Returns true if successful, false on failure.
-   Fails if no file named NAME exists,
+   Fails if no file named NAME exists,      
    or if an internal memory allocation fails. */
 bool filesys_remove(const char *name)
 {

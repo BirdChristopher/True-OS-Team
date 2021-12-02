@@ -136,6 +136,7 @@ pagedir_get_page(uint32_t *pd, const void *uaddr, int size)
 
   if (!is_valid_user_pointer(uaddr, size))
   {
+    // printf("-1 due to pagedir_get_page fail\n");
     thread_current()->return_code = -1;
     // printf("invalid user pointer spotted! %8x\n", uaddr);
     thread_exit();
@@ -299,6 +300,7 @@ bool string_check_valid(uint32_t *pd, const char *str_pt)
   if (str_pt == NULL)
     return false;
   int i = 0;
+  struct thread *cur = thread_current();
   while (true)
   {
     if (!is_user_vaddr(str_pt + i))
@@ -308,8 +310,10 @@ bool string_check_valid(uint32_t *pd, const char *str_pt)
     if (pte == NULL || (*pte & PTE_P) == 0)
       return false;
 
-    if (*(str_pt + i++) != '\0')
+    if (*(str_pt + i) == '\0')
       break;
+
+    i++;
   }
 
   return true;
