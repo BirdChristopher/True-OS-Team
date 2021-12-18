@@ -41,8 +41,12 @@ void pagedir_destroy(uint32_t *pd)
       uint32_t *pte;
 
       for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
+      {
         if (*pte & PTE_P)
+        {
           palloc_free_page(pte_get_page(*pte));
+        }
+      }
       palloc_free_page(pt);
     }
   palloc_free_page(pd);
@@ -73,12 +77,15 @@ lookup_page(uint32_t *pd, const void *vaddr, bool create)
     {
       pt = palloc_get_page(PAL_ZERO);
       if (pt == NULL)
+      {
         return NULL;
-
+      }
       *pde = pde_create(pt);
     }
     else
+    {
       return NULL;
+    }
   }
 
   /* Return the page table entry. */
@@ -107,7 +114,6 @@ bool pagedir_set_page(uint32_t *pd, void *upage, void *kpage, bool writable)
   ASSERT(is_user_vaddr(upage));
   ASSERT(vtop(kpage) >> PTSHIFT < init_ram_pages);
   ASSERT(pd != init_page_dir);
-
   pte = lookup_page(pd, upage, true);
 
   if (pte != NULL)
@@ -117,7 +123,9 @@ bool pagedir_set_page(uint32_t *pd, void *upage, void *kpage, bool writable)
     return true;
   }
   else
+  {
     return false;
+  }
 }
 
 /* Looks up the physical address that corresponds to user virtual
@@ -168,6 +176,22 @@ void pagedir_clear_page(uint32_t *pd, void *upage)
   if (pte != NULL && (*pte & PTE_P) != 0)
   {
     *pte &= ~PTE_P;
+    invalidate_pagedir(pd);
+  }
+}
+
+/* 将页表中的对应记录的present重新置位 */
+void pagedir_restore_page(uint32_t *pd, void *upage)
+{
+  uint32_t *pte;
+
+  ASSERT(pg_ofs(upage) == 0);
+  ASSERT(is_user_vaddr(upage));
+
+  pte = lookup_page(pd, upage, false);
+  if (pte != NULL && (*pte & PTE_P) == 0)
+  {
+    *pte |= PTE_P; //毛病很大
     invalidate_pagedir(pd);
   }
 }
@@ -258,7 +282,7 @@ active_pd(void)
   return ptov(pd);
 }
 
-/* Seom page table changes can cause the CPU's translation
+/* Some page table changes can cause the CPU's translation
    lookaside buffer (TLB) to become out-of-sync with the page
    table.  When this happens, we have to "invalidate" the TLB by
    re-activating it.
@@ -317,4 +341,29 @@ bool string_check_valid(uint32_t *pd, const char *str_pt)
   }
 
   return true;
+}
+
+bool is_valid_read_buffer_addr(void *stack_pt, void *buf_addr)
+{
+  // printf("checking buf_addr is %p, **%p\n", buf_addr, stack_pt);
+  if (buf_addr == NULL)
+    return false;
+  if (buf_addr < stack_pt && pagedir_get_page(thread_current()->pagedir, buf_addr, 1) == NULL)
+    return false;
+  if (!is_user_vaddr(buf_addr))
+    return false;
+  return true;
+}
+
+bool pagedir_is_readonly(uint32_t *pd, const void *upage, const void *paddr)
+{
+  uint32_t *pte;
+  pte = lookup_page(pd, upage, false);
+  if (pte == NULL)
+  {
+    printf("pte is null, error here\n");
+    return false;
+  }
+
+  return (*pte & PTE_W == 0);
 }

@@ -90,8 +90,6 @@ create(struct intr_frame *frame)
   {
     cur->return_code = -1;
     thread_exit();
-    // frame->eax = -1;
-    // return;
   }
   char *file_name = *(char **)(frame->esp + 16);
   //创建文件名为空的文件，返回创建失败或直接以 -1 退出。
@@ -99,15 +97,7 @@ create(struct intr_frame *frame)
   {
     cur->return_code = -1;
     thread_exit();
-    // frame->eax = -1;
-    // return;
   }
-  // printf("file_name is %s\n", file_name);
-  // printf("file_name is %s\n", *(char **)(frame->esp + 8));
-  // printf("file_name is %s\n", *(char **)(frame->esp + 16));
-  // printf("file_name is %s\n", *(char **)(frame->esp + 20));
-  // printf("file_name is %s\n", *(char **)(frame->esp + 24));
-  // printf("file_name is %s\n", *(char **)(frame->esp + 28));
   lock_file();
   off_t size = *(off_t *)(frame->esp + 20);
   frame->eax = filesys_create(file_name, size);
@@ -115,7 +105,6 @@ create(struct intr_frame *frame)
   return;
 }
 
-//todo : 移除文件
 static void
 remove(struct intr_frame *frame)
 {
@@ -155,8 +144,6 @@ open(struct intr_frame *frame)
     cur->return_code = -1;
     thread_exit();
   }
-
-  // printf("file_name is %s\n", file_name);
 
   if (*file_name == '\0') //检查文件名合法性
   {
@@ -202,27 +189,26 @@ filesize(struct intr_frame *frame)
 
   if (fd == 0 || fd == 1)
   {
-    // release_file();
     frame->eax = -1;
     return -1;
   }
   struct file *file = get_file_by_fd(fd);
   if (file == NULL)
   {
-    // release_file();
     frame->eax = -1;
     return -1;
   }
-  // release_file();
   lock_file();
   frame->eax = file_length(file);
   release_file();
   return file_length(file);
 }
 
+//TODO；可能出现栈增长，需要修改指针判定规则
 static void
 read(struct intr_frame *frame)
 {
+  // printf("try to read now \n");
   lock_file();
   struct thread *cur = thread_current();
   if (!pointer_check_valid(cur->pagedir, frame->esp + 28, 4)) //检查参数地址的合法性
@@ -236,9 +222,10 @@ read(struct intr_frame *frame)
 
   off_t size = *(off_t *)(frame->esp + 28);
   int actual_size = 0;
-  //检查buffer是否合法
-  if (!pointer_check_valid(cur->pagedir, buffer, size))
+  //检查buffer是否合法，这里应允许栈增长！
+  if (!is_valid_read_buffer_addr(frame->esp, buffer))
   {
+    // printf("not valid buffer addr %p %p\n", frame->esp, buffer);
     cur->return_code = -1;
     release_file();
     thread_exit();
@@ -247,9 +234,8 @@ read(struct intr_frame *frame)
   if (fd == 0)
   {
     for (int i = 0; i < size; i++)
-    {
       buffer[i] = input_getc();
-    }
+
     release_file();
     frame->eax = size;
   }
@@ -269,9 +255,9 @@ read(struct intr_frame *frame)
     }
     return;
   }
+  // printf("read done now\n");
 }
 
-//todo : 写入文件
 static void
 write(struct intr_frame *frame) //todo:没写完
 {
@@ -284,7 +270,6 @@ write(struct intr_frame *frame) //todo:没写完
   int fd = *(int *)(frame->esp + 20);
   uint8_t *buffer = *(uint8_t **)(frame->esp + 24);
   int size = *(int *)(frame->esp + 28);
-  // printf("filesys  write  fd:::::  %d,  size ::: %d\n", fd, size);
   //检查buffer是否合法
   if (!string_check_valid(cur->pagedir, buffer))
   {
@@ -295,9 +280,7 @@ write(struct intr_frame *frame) //todo:没写完
   //有的时候字符串太长需要截断，这是完全有可能的.
   int actual_size = 0;
   if (actual_size < size)
-  {
     actual_size = size;
-  }
 
   if (fd == 1)
   {
@@ -315,9 +298,7 @@ write(struct intr_frame *frame) //todo:没写完
       release_file();
     }
     else
-    {
       actual_size = -1;
-    }
   }
   frame->eax = actual_size;
   //返回值
@@ -328,29 +309,25 @@ static void
 seek(struct intr_frame *frame)
 {
   struct thread *cur = thread_current();
-  // printf("seek 1111111111\n");
   if (!pointer_check_valid(cur->pagedir, frame->esp + 16, 4)) //检查参数地址的合法性
   {
-    // printf("read check faild!\n");
     cur->return_code = -1;
     thread_exit();
   }
   int fd = *(int *)(frame->esp + 16);
   if (!pointer_check_valid(cur->pagedir, frame->esp + 20, 4)) //检查参数地址的合法性
   {
-    // printf("read check faild!\n");
     cur->return_code = -1;
     thread_exit();
   }
   int position = *(int *)(frame->esp + 20);
-  // printf("seek %d   %d\n", fd, position);
   if (fd == 0 || fd == 1)
     exit(-1);
+
   struct file *file = get_file_by_fd(fd);
   if (file == NULL)
-  {
     exit(-1);
-  }
+
   lock_file();
   file_seek(file, position);
   release_file();
@@ -397,8 +374,19 @@ close(struct intr_frame *frame)
   thread_exit();
 }
 
-static void syscall_handler(struct intr_frame *);
+static void
+mmap(struct intr_frame *frame)
+{
+  //TODO
+}
 
+static void
+munmap(struct intr_frame *frame)
+{
+  //TODO
+}
+
+static void syscall_handler(struct intr_frame *);
 void syscall_init(void)
 {
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
@@ -469,6 +457,14 @@ syscall_handler(struct intr_frame *f)
 
   case SYS_CLOSE:
     close(f);
+    break;
+
+  case SYS_MMAP:
+    mmap(f);
+    break;
+
+  case SYS_MUNMAP:
+    munmap(f);
     break;
 
   default:

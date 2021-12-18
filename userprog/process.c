@@ -19,6 +19,8 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static thread_func start_process_child NO_RETURN;
@@ -51,6 +53,7 @@ tid_t process_execute(const char *file_name)
   char *token, *saved_ptr;
   token = strtok_r(fn_copy, " ", &saved_ptr);
   /* Create a new thread to execute FILE_NAME. */
+  // printf("starting user prog\n");
   tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy1);
   if (tid != TID_ERROR)
     sema_down(&thread_current()->load_sem); //在子进程load结束后才能继续执行
@@ -85,9 +88,8 @@ static void start_process(void *file_name_)
   success = load(file_name, &if_.eip, &if_.esp);
   // printf("after load,tid is %d，success? : \n", thread_current()->tid, success);
   if (!success)
-  {
     thread_current()->parent->load_code = -1;
-  }
+
   sema_up(&thread_current()->parent->load_sem);
 
   /* If load failed, quit. */
@@ -105,6 +107,7 @@ static void start_process(void *file_name_)
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
   //用户程序从此处开始执行
+  // printf("loading done!!!!!!!!!!!!!!!\n");
   asm volatile("movl %0, %%esp; jmp intr_exit"
                :
                : "g"(&if_)
@@ -140,13 +143,10 @@ int process_wait(tid_t child_tid)
   {
     return -1;
   }
-  // printf("before semadown(&child_t->return_sem),child_tid is %d,waiter is %d\n", child_tid, cur_thread->tid);
   sema_down(&child_t->return_sem);
-  // printf("after semadown(&child_t->return_sem,child_tid is %d,waiter is %d\n", child_tid, cur_thread->tid);
   int return_code_tmp = child_t->return_code;
   list_remove(&child_t->children);
   sema_up(&child_t->free_sem);
-  // printf("normally return from process wait\n");
   return return_code_tmp;
 }
 
@@ -154,24 +154,8 @@ int process_wait(tid_t child_tid)
 void process_exit(void)
 {
   struct thread *cur = thread_current();
-  // struct list_elem *tempe, *begin, *tail;
-  // begin = list_begin(&thread_current()->fd_list);
-  // tail = list_tail(&thread_current()->fd_list);
-  // for (tempe = begin; tempe != tail; tempe = list_next(tempe))
-  // {
-  //   struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
-  //   list_remove(&temp_fd->elem);
-  //   // printf("file close  inode:: %d\n", temp_fd->fd_num);
-  //   if (temp_fd->fd_num == 0)
-  //   {
-  //     printf("file allow write from process exit()\n");
-  //     file_allow_write(temp_fd->file);
-  //   }
-  //   file_close(temp_fd->file);
-  // }
 
   uint32_t *pd;
-
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -188,17 +172,8 @@ void process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
+  //TODO: 释放所有的页框
 
-  // if (!thread_current()->EXEC_CHILD_PROC)
-  // {
-  //   printf("%s: exit(%d)\n", cur->name, cur->return_code);
-  //   return;
-  // }
-  // if (cur->return_code != -1)
-  // {
-  //   printf("%s: exit(%d)\n", cur->name, cur->return_code);
-  //   return;
-  // }
   printf("%s: exit(%d)\n", cur->name, cur->return_code, cur->tid);
 }
 
@@ -303,16 +278,17 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   t->pagedir = pagedir_create();
   if (t->pagedir == NULL)
   {
+    // printf("null page dir when load\n");
     t->parent->load_code = -1;
     goto done;
   }
-  process_activate();
 
-  char *fn_copy = palloc_get_page(0);
+  // printf("pagedir addr is %p,tid is%d\n", t->pagedir, t->tid);
+
+  process_activate();
+  char *fn_copy = palloc_get_page(0); //这一页资源只是用于分解参数，可以只从kernel pool取并无需注册至frame_table
   if (fn_copy == NULL)
-  {
     return TID_ERROR;
-  }
 
   strlcpy(fn_copy, file_name, PGSIZE);
 
@@ -327,10 +303,9 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
     t->parent->load_code = -1;
     goto done;
   }
-
   // file_deny_write
-  file_deny_write(file); //inode->deny_write++
-  struct fd_item *new_file_item = malloc(sizeof(struct fd_item));
+  file_deny_write(file);                                          //inode->deny_write++
+  struct fd_item *new_file_item = malloc(sizeof(struct fd_item)); //文件描述符表被存在kernel pool中，不要用obtain_new_frame
   if (new_file_item == NULL)
   {
     goto done;
@@ -338,7 +313,6 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   new_file_item->file = file;
   new_file_item->fd_num = 0;
   list_push_back(&t->fd_list, &new_file_item->elem);
-
   /* Read and verify executable header. */
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr || memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 3 || ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Elf32_Phdr) || ehdr.e_phnum > 1024)
   {
@@ -346,11 +320,10 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
     t->parent->load_code = -1;
     goto done;
   }
-
   //将program的header信息读出来用一个结构体存下来
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
-  for (i = 0; i < ehdr.e_phnum; i++)
+  for (i = 0; i < ehdr.e_phnum; i++) //每一次循环向内存中写入一个页
   {
     struct Elf32_Phdr phdr;
 
@@ -405,8 +378,6 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
       break;
     }
   }
-
-  // printf("good so far\n");
   char *fn_copy_page_pt = fn_copy;
   /* Set up stack. */
   if (!setup_stack(esp, fn_copy))
@@ -428,10 +399,6 @@ done:
   }
   return success;
 }
-
-/* load() helpers. */
-
-static bool install_page(void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -492,6 +459,7 @@ validate_segment(const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
+//TODO: 为什么需要修改？？
 static bool
 load_segment(struct file *file, off_t ofs, uint8_t *upage,
              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
@@ -500,8 +468,8 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   ASSERT(pg_ofs(upage) == 0);
   ASSERT(ofs % PGSIZE == 0);
 
-  file_seek(file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0)
+  file_seek(file, ofs);                    //此时已将文件seeker指向段的开始地址
+  while (read_bytes > 0 || zero_bytes > 0) //一个段可能需要很多页
   {
     /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
@@ -510,7 +478,9 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     /* Get a page of memory. */
-    uint8_t *kpage = palloc_get_page(PAL_USER);
+    // printf("checkpoint in load_segment\n");
+    uint8_t *kpage = obtain_new_frame(PAL_USER);
+    // printf("checkpoint in load_segment 2,kpage is %p\n", kpage);
     if (kpage == NULL)
       return false;
 
@@ -529,6 +499,11 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
       return false;
     }
 
+    if (!register_spl_pte(&thread_current()->page_table, upage, kpage, writable, HEAP_PAGE))
+    {
+      printf("fail registering new user page in supplemental page table in load_segment\n");
+      return false;
+    }
     /* Advance. */
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
@@ -545,9 +520,15 @@ static bool
 setup_stack(void **esp, char *cmd)
 {
   uint8_t *kpage;
-  bool success = false;
-  // printf("good so far 2\n");
-  kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  bool success = false, success_regi;
+  struct thread *cur = thread_current();
+  kpage = obtain_new_frame(PAL_USER | PAL_ZERO);
+  if (kpage == NULL)
+  {
+    thread_current()->return_code = -1;
+    thread_exit();
+    //还未实现swap,暂时直接以异常情况退出
+  }
 
   char *token, *saved_ptr;
   char *argv[30];
@@ -562,6 +543,10 @@ setup_stack(void **esp, char *cmd)
   if (kpage != NULL)
   {
     success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
+
+    if (!register_spl_pte(&cur->page_table, (uint8_t *)PHYS_BASE - PGSIZE, kpage, true, STACK_PAGE))
+      printf("fail registering new user page in supplemental page table in setup_stack\n");
+
     if (success)
     {
       *esp = PHYS_BASE;
@@ -582,7 +567,6 @@ setup_stack(void **esp, char *cmd)
       {
         *esp = *esp - 4;
         *(unsigned *)*esp = argv[i];
-        // printf("%8x\n", *(unsigned *)*esp);
       }
 
       *esp = *esp - 4; //argv
@@ -596,7 +580,6 @@ setup_stack(void **esp, char *cmd)
     else
       palloc_free_page(kpage);
   }
-  // printf("esp right now is %08x\n", *esp);
   return success;
 }
 
@@ -609,8 +592,7 @@ setup_stack(void **esp, char *cmd)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
-install_page(void *upage, void *kpage, bool writable)
+bool install_page(void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current();
 
@@ -642,9 +624,7 @@ tid_t process_execute_child(const char *file_name)
   char *token, *saved_ptr;
   token = strtok_r(fn_copy, " ", &saved_ptr);
   /* Create a new thread to execute FILE_NAME. */
-  // printf("before thread_create\n");
   tid = thread_create(token, PRI_DEFAULT, start_process_child, fn_copy1); //对于无法执行的子程序，需在此处返回-1！！！！
-  // printf("after thread_create,tid is %d\n", tid);
   if (tid != TID_ERROR)
     sema_down(&thread_current()->load_sem); //在子进程load结束后才能继续执行
   palloc_free_page(fn_copy);
@@ -667,20 +647,16 @@ tid_t process_execute_child(const char *file_name)
 
 static void start_process_child(void *file_name_)
 {
-  // printf("?????\n");
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-  // printf("just begin start_process_child,tid is %d\n", thread_current()->tid);
   thread_current()->EXEC_CHILD_PROC = true;
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  // printf("before load,tid is %d\n", thread_current()->tid);
   success = load(file_name, &if_.eip, &if_.esp);
-  // printf("after load,tid is %d，success? : %d\n", thread_current()->tid, success ? 1 : 0);
   if (!success)
   {
     thread_current()->parent->load_code = -1;
@@ -701,6 +677,7 @@ static void start_process_child(void *file_name_)
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
   //用户程序从此处开始执行
+  // printf("loading done!!!!,tid is %d\n", thread_current()->tid);
   asm volatile("movl %0, %%esp; jmp intr_exit"
                :
                : "g"(&if_)
@@ -713,7 +690,6 @@ void process_exit_child(void)
   struct thread *cur = thread_current();
 
   uint32_t *pd;
-
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

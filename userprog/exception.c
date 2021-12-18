@@ -5,13 +5,20 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/process.h"
+#include "threads/vaddr.h"
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill(struct intr_frame *);
 static void page_fault(struct intr_frame *);
-
+static bool is_stack_access(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f);
+static int is_access_swap_slot(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f);
+static bool is_access_mmap(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f);
+static bool is_valid_access(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f);
 /* Registers handlers for interrupts that can be caused by user
    programs.
 
@@ -125,7 +132,18 @@ kill(struct intr_frame *f)
    example code here shows how to parse that information.  You
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
-   [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
+   [IA32-v3a] section 5.15 "Exception and Interrupt Reference". 
+   
+
+   需要解决的问题：
+   1. 如何判断是否是合法access？
+      合法的：栈增长；文件映射；swap slot；
+      非法：地址既不在page_table,也不在swap or file，也就是以上三种情况之外的情况？？？
+   2. 如何判断是栈增长带来的page fault，还是页not present带来的page fault等？
+   3. 如何fetch data？
+
+   退出page_fault后，pintos将会重试执行eip指向的命令。
+   */
 static void
 page_fault(struct intr_frame *f)
 {
@@ -133,7 +151,7 @@ page_fault(struct intr_frame *f)
    bool write;       /* True: access was write, false: access was read. */
    bool user;        /* True: access by user, false: access by kernel. */
    void *fault_addr; /* Fault address. */
-
+   int idx;
    /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
      data.  It is not necessarily the address of the instruction
@@ -164,5 +182,88 @@ page_fault(struct intr_frame *f)
    //        not_present ? "not present" : "rights violation",
    //        write ? "writing" : "reading",
    //        user ? "user" : "kernel");
-   kill(f);
+   // printf("esp is %p right now, eip is %p right now\n", f->esp, f->eip);
+   //会不会出现分一个页装不下的情况？？
+   // printf("%d %d %d\n", not_present, write, user);
+   if (is_valid_access(not_present, write, user, fault_addr, f)) //判断是否是合法引用
+   {
+      if ((idx = is_access_swap_slot(not_present, write, user, fault_addr, f)) != -1) //缺失页应从swap_slot中取回
+      {
+         // printf("page fault: trying to access swap slot\n");
+         if (!reinstall_page(idx, pg_round_down(fault_addr)))
+         {
+            printf("swap back from slot fail\n");
+            kill(f);
+         }
+      }
+      else if (is_access_mmap(not_present, write, user, fault_addr, f)) //缺失页应从mmap中取出
+         printf("a page should be fetched from mmap\n");
+      else if (is_stack_access(not_present, write, user, fault_addr, f)) //普通的栈增长或者其他缺页情形，应分配一个全新页
+      {
+         // printf("try2stack grow right now\n");
+         if (!add_stack_page(pg_round_down(fault_addr)))
+         {
+            printf("stack growth fail, all resources used up!\n");
+            kill(f);
+         }
+         // printf("after try 2 grow stack\n");
+      }
+      else //不符以上任何条件，将直接KILL
+      {
+         // printf("page fault do not match any valid circumstance,kill,fault addr is %p,tid is %d\n", fault_addr, thread_current()->tid);
+         kill(f);
+      }
+   }
+   else
+   {
+      // printf("Page fault at %p: %s error %s page in %s context.\n",
+      //        fault_addr,
+      //        not_present ? "not present" : "rights violation",
+      //        write ? "writing" : "reading",
+      //        user ? "user" : "kernel");
+      // printf("esp is %p right now, eip is %p right now\n", f->esp, f->eip);
+      kill(f); //包括写入只读页面等其他情况
+   }
+}
+
+static bool
+is_valid_access(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f)
+{
+   if (!not_present || fault_addr == NULL || !is_user_vaddr(fault_addr))
+      return false;
+   return true;
+}
+
+static bool
+is_stack_access(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f)
+{
+   // printf("delta is %d,not present is %d,write is %d,esp==0 is %d\n", delta, not_present ? 1 : 0, write ? 1 : 0, (int)esp == 0 ? 1 : 0);
+   if (!write) //不可能向一个从未分配页空间的地址读数据，所以可以直接排除
+      return false;
+
+   int delta = (int)(f->esp - fault_addr);
+   if (user)
+   {
+      if (delta == 4 || delta == 32) //PUSH or PUSHA
+         return true;
+      else if (delta <= 0)
+         return is_user_vaddr(fault_addr);
+   }
+   else
+      return is_user_vaddr(fault_addr);
+}
+
+static int
+is_access_swap_slot(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f)
+{
+   //直接去swap_table查，查到则返回在block device中的序号，否则返回-1
+   return check_swap_table(thread_current(), fault_addr);
+   //TODO: kernel中查不到？？？
+}
+
+//TODO: 补充mmap的判定逻辑
+static bool
+is_access_mmap(bool not_present, bool write, bool user, void *fault_addr, struct intr_frame *f)
+{
+   return false;
 }

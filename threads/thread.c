@@ -10,10 +10,12 @@
 #include "threads/palloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
+#include "vm/frame.h"
 #include "threads/vaddr.h"
-#ifdef USERPROG
 #include "userprog/process.h"
-#endif
+#include "userprog/pagedir.h"
+#include "vm/page.h"
+#include "vm/swap.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -96,7 +98,12 @@ void thread_init(void)
   lock_init(&file_lock);
   list_init(&ready_list);
   list_init(&all_list);
-
+  //初始化页帧表
+  list_init(&frame_table);
+  accessed_pt = NULL;
+  lock_init(&swap_lock);
+  lock_init(&frame_lock);
+  lock_init(&pagedir_lock);
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread();
   init_thread(initial_thread, "main", PRI_DEFAULT);
@@ -129,10 +136,8 @@ void thread_tick(void)
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;
-#ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
-#endif
   else
     kernel_ticks++;
 
@@ -298,41 +303,25 @@ void free_fd()
 
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
+//TODO: 退出前释放所有的页框,修改page table，page dir，frame table， swap table！！！
 void thread_exit(void)
 {
   ASSERT(!intr_context());
-
-  process_exit();
   free_fd();
+  process_exit();
+
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable();
   list_remove(&thread_current()->allelem);
-  struct list_elem *tempe, *begin, *tail;
-  // begin = list_begin(&thread_current()->fd_list);
-  // tail = list_tail(&thread_current()->fd_list);
-
-  // for (tempe = begin; tempe != tail; tempe = list_next(tempe))
-  // {
-  //   struct fd_item *temp_fd = list_entry(tempe, struct fd_item, elem);
-  //   list_remove(&temp_fd->elem);
-  //   // printf("file close  inode:: %d\n", temp_fd->fd_num);
-  //   if (temp_fd->fd_num == 0)
-  //   {
-  //     file_allow_write(temp_fd->file);
-  //   }
-  //   file_close(temp_fd->file);
-  //   free(temp_fd);
-  // }
 
   //让return_sem增一
   sema_up(&thread_current()->return_sem);
   sema_down(&thread_current()->free_sem);
   if (thread_current()->parent != NULL)
-  {
     sema_up(&thread_current()->parent->load_sem);
-  }
+
   thread_current()->status = THREAD_DYING;
   schedule();
   NOT_REACHED();
@@ -513,6 +502,8 @@ init_thread(struct thread *t, const char *name, int priority)
   t->load_code = 0;
   list_init(&t->fd_list);
   list_push_back(&all_list, &t->allelem);
+
+  list_init(&t->page_table);
   t->parent = running_thread();
 }
 struct thread *
@@ -587,10 +578,8 @@ void thread_schedule_tail(struct thread *prev)
   /* Start new time slice. */
   thread_ticks = 0;
 
-#ifdef USERPROG
   /* Activate the new address space. */
   process_activate();
-#endif
 
   /* If the thread we switched from is dying, destroy its struct
      thread.  This must happen late so that thread_exit() doesn't

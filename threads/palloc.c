@@ -135,8 +135,9 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
 #ifndef NDEBUG
   memset(pages, 0xcc, PGSIZE * page_cnt);
 #endif
-
+  //printf("??\n");
   ASSERT(bitmap_all(pool->used_map, page_idx, page_cnt));
+  //printf("after ??\n");
   bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
 }
 

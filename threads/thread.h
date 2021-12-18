@@ -7,6 +7,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "synch.h"
+#include "lib/kernel/hash.h"
 /* States in a thread's life cycle. */
 enum thread_status
 {
@@ -112,6 +113,8 @@ struct thread
    struct list children_list; //定义子进程组
    struct list_elem children; //定义子进程
    bool EXEC_CHILD_PROC;
+
+   struct list page_table; //supplemental list table
 };
 
 struct fd_item
